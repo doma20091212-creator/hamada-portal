@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Office panel — Hamada Ahmed Ali for Accounting</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+  <aside class="side">
+    <div class="side-brand">
+      <img src="/assets/logo-white.png" alt="" class="side-logo">
+      <div class="side-name" id="sideName">Hamada Ahmed Ali</div>
+      <div class="side-sub" data-i18n="office_panel">Office panel</div>
+    </div>
+    <nav class="side-nav">
+      <button class="navlink active" data-tab="clients"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></span><span data-i18n="clients">Clients</span></button>
+      <button class="navlink" data-tab="inbox"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M3 3h18a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 10 3.2 3.2H9l1-1h4l1 1h2.8L21 13V5H3v8Z"/></svg></span><span data-i18n="inbox">Inbox</span><span class="nav-badge" id="inboxBadge" hidden></span></button>
+      <button class="navlink" data-tab="files"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5ZM7 12h10v1.6H7V12Zm0 3.4h10V17H7v-1.6Z"/></svg></span><span data-i18n="all_files">All files</span></button>
+    </nav>
+    <div class="side-foot">
+      <button class="btn ghost light sm block" id="langBtn"><span id="langBtnText">العربية</span></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="top-title">
+        <h1 id="pageTitle" data-i18n="clients">Clients</h1>
+        <p class="muted" id="pageSub"></p>
+      </div>
+      <div class="top-actions">
+        <div class="who"><span class="avatar" id="whoAvatar">A</span><span id="whoName">Admin</span></div>
+        <button class="btn ghost sm" id="pwBtn" data-i18n="change_password">Change password</button>
+        <button class="btn ghost sm" id="logoutBtn" data-i18n="logout">Log out</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- stats -->
+      <section class="stats-row" id="statsRow">
+        <div class="stat"><div class="stat-k" data-i18n="clients">Clients</div><div class="stat-v" id="stClients">0</div></div>
+        <div class="stat"><div class="stat-k" data-i18n="documents">Documents</div><div class="stat-v" id="stFiles">0</div></div>
+        <div class="stat"><div class="stat-k" data-i18n="inbox">Inbox</div><div class="stat-v" id="stUnread">0</div></div>
+        <div class="stat"><div class="stat-k" data-i18n="storage_used">Storage used</div><div class="stat-v" id="stBytes">0</div></div>
+      </section>
+
+      <!-- clients tab -->
+      <section class="tab" id="tab-clients">
+        <div class="toolbar">
+          <div class="search"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg><input id="clientSearch" class="input plain" data-i18n-ph="search_clients" placeholder="Search clients…" autocomplete="off"></div>
+          <button class="btn primary" id="addClientBtn"><span class="plus">+</span><span data-i18n="new_client">New client</span></button>
+        </div>
+        <div class="card table-card"><table class="tbl" id="clientsTbl"></table><div class="empty" id="clientsEmpty" hidden></div></div>
+      </section>
+
+      <!-- inbox tab -->
+      <section class="tab" id="tab-inbox" hidden>
+        <div class="toolbar">
+          <p class="muted" data-i18n="inbox_hint">Files clients sent from their side. Download them, send each file to the right client folder, or discard it.</p>
+        </div>
+        <div id="inboxList" class="stack"></div>
+        <div class="empty" id="inboxEmpty" hidden></div>
+      </section>
+
+      <!-- all files tab -->
+      <section class="tab" id="tab-files" hidden>
+        <div class="toolbar">
+          <div class="search"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg><input id="fileSearch" class="input plain" data-i18n-ph="search_files" placeholder="Search file name, client, folder…" autocomplete="off"></div>
+          <select class="input plain" id="fileClientFilter" style="min-width:180px"></select>
+        </div>
+        <div class="card table-card"><table class="tbl" id="allFilesTbl"></table><div class="empty" id="filesEmpty" hidden></div></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/js/i18n.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

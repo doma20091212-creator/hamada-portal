@@ -1,0 +1,17 @@
+{
+  "brand": {
+    "name_en": "Hamada Ahmed Ali for Accounting",
+    "name_ar": "حمادة أحمد علي للمحاسبة والمراجعة",
+    "tagline_en": "Accounting & Auditing — Client Documents Portal",
+    "tagline_ar": "المحاسبة والمراجعة — بوابة مستندات العملاء"
+  },
+  "admin": {
+    "name": "Hamada Ahmed Ali",
+    "name_ar": "حمادة أحمد علي",
+    "email": "doma20091212@gmail.com",
+    "phone": "01010799378"
+  },
+  "server": {
+    "port": 3000
+  }
+}

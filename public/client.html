@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My documents — Hamada Ahmed Ali for Accounting</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="client-body">
+  <header class="cli-top">
+    <div class="cli-brand">
+      <img src="/assets/logo.png" alt="" class="cli-logo">
+      <div>
+        <div class="cli-name" id="brandName">Hamada Ahmed Ali for Accounting</div>
+        <div class="cli-tag" id="brandTag"></div>
+      </div>
+    </div>
+    <div class="cli-actions">
+      <button class="btn ghost sm" id="langBtn"><span id="langBtnText">العربية</span></button>
+      <button class="btn ghost sm" id="pwBtn" data-i18n="change_password">Change password</button>
+      <button class="btn ghost sm" id="logoutBtn" data-i18n="logout">Log out</button>
+    </div>
+  </header>
+
+  <main class="cli-main">
+    <section class="cli-hero card">
+      <div>
+        <h1><span data-i18n="welcome">Welcome</span>, <span id="meName">—</span></h1>
+        <p class="muted" data-i18n="cli_hint">Your private folder — only you and the office can see these files.</p>
+      </div>
+      <div class="cli-stats">
+        <div class="chipbox"><b id="stCount">0</b><span data-i18n="documents">documents</span></div>
+        <div class="chipbox"><b id="stBytes">0</b><span data-i18n="size">total size</span></div>
+      </div>
+    </section>
+
+    <div class="cli-grid">
+      <section class="card sec">
+        <div class="sec-head">
+          <h2 data-i18n="my_files">My files</h2>
+          <div class="sec-tools">
+            <div class="search small"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg><input id="mySearch" class="input plain" data-i18n-ph="search_files" placeholder="Search…" autocomplete="off"></div>
+          </div>
+        </div>
+        <div class="folder-chips" id="myFolderChips"></div>
+        <div id="myFiles" class="filelist"></div>
+        <div class="empty" id="myEmpty" hidden></div>
+      </section>
+
+      <aside class="card sec">
+        <div class="sec-head"><h2 data-i18n="send_title">Send documents to the office</h2></div>
+        <div class="dropzone" id="sendDrop" tabindex="0">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d="M12 3 6.5 8.5 7.9 9.9 11 6.8V16h2V6.8l3.1 3.1 1.4-1.4L12 3ZM5 18v3h14v-3h-2v1H7v-1H5Z"/></svg>
+          <p class="dz-big" data-i18n="drop_here">Drop files here or click to browse</p>
+          <p class="muted" data-i18n="drop_hint">PDF, scans, Excel, Word, images, archives — up to 25 MB each</p>
+          <input type="file" id="sendInput" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.txt,.rtf,.odt,.ods,.ppt,.pptx,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp,.gif,.heic,.tif,.tiff">
+        </div>
+        <ul class="pendlist" id="pendList"></ul>
+        <label class="field">
+          <span data-i18n="note">Note for the accountant (optional)</span>
+          <textarea class="input" id="sendNote" rows="3" maxlength="500" data-i18n-ph="note_ph" placeholder="e.g. September invoices, please file them under Tax 2026"></textarea>
+        </label>
+        <button class="btn primary block" id="sendBtn" disabled><span data-i18n="send_to_office">Send to the office</span></button>
+
+        <div class="sec-sub"><h3 data-i18n="sent_title">Sent items</h3><ul class="sentlist" id="sentList"></ul></div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/js/i18n.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/client.js"></script>
+</body>
+</html>
