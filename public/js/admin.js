@@ -14,6 +14,9 @@
     folderView: null,      // {client, files, folders}
     folderFilter: '',
     pending: [],
+    profile: { is_owner: false, permissions: [] },
+    admins: [],
+    permissionDefs: [],
   };
 
   async function init() {
@@ -24,6 +27,10 @@
 
     document.querySelectorAll('.navlink').forEach((b) => (b.onclick = () => setTab(b.dataset.tab)));
     document.getElementById('addClientBtn').onclick = () => clientFormModal(null);
+    const addAdmin = document.getElementById('addAdminBtn'); if (addAdmin) addAdmin.onclick = () => adminFormModal(null);
+    const saveSettings = document.getElementById('saveSettingsBtn'); if (saveSettings) saveSettings.onclick = saveSettingsForm;
+    const discardAll = document.getElementById('discardAllBtn'); if (discardAll) { discardAll.hidden = !has('delete_files'); discardAll.onclick = discardAllInbox; }
+    await loadProfile();
 
     let d1; document.getElementById('clientSearch').addEventListener('input', (e) => { S.clientQ = e.target.value; clearTimeout(d1); d1 = setTimeout(renderClients, 180); });
     let d2; document.getElementById('fileSearch').addEventListener('input', (e) => { S.fileQ = e.target.value; clearTimeout(d2); d2 = setTimeout(loadAllFiles, 300); });
@@ -44,7 +51,7 @@
     render();
   }
 
-  const TAB_TITLE = () => ({ clients: t('clients'), inbox: t('inbox'), files: t('all_files') })[S.tab];
+  const TAB_TITLE = () => ({ clients: t('clients'), inbox: t('inbox'), files: t('all_files'), admins: t('admins_permissions'), settings: t('portal_settings') })[S.tab] || 'Admin';
 
   function render() {
     document.getElementById('pageTitle').textContent = TAB_TITLE();
@@ -52,7 +59,56 @@
     if (S.tab === 'clients') renderClients();
     if (S.tab === 'inbox') renderInbox();
     if (S.tab === 'files') { refreshClientFilter(); renderFiles(); }
+    if (S.tab === 'admins') { loadAdmins().then(renderAdmins); }
+    if (S.tab === 'settings') { loadSettings(); loadAudit(); }
   }
+
+
+  async function loadProfile() {
+    try {
+      S.profile = await UI.api('/admin/profile');
+      const owner = !!S.profile.is_owner;
+      const adminsNav = document.getElementById('adminsNav'); if (adminsNav) adminsNav.hidden = !owner;
+      const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings');
+      const addClient = document.getElementById('addClientBtn'); if (addClient) addClient.hidden = !owner && !S.profile.permissions.includes('manage_clients');
+    } catch (e) { UI.errToast(e); }
+  }
+
+  function has(p) { return !!S.profile.is_owner || S.profile.permissions.includes(p); }
+
+  async function loadAdmins() {
+    if (!S.profile.is_owner) return;
+    try { const d=await UI.api('/admin/admins'); S.admins=d.admins||[]; S.permissionDefs=d.permissions||[]; } catch(e){UI.errToast(e);}
+  }
+
+  function fmtExpiry(x){return x?window.I18N.fmtDate(x):t('permanent_access_hint').split('.')[0];}
+  function renderAdmins(){
+    const tbl=document.getElementById('adminsTbl'), empty=document.getElementById('adminsEmpty'); if(!tbl)return;
+    if(!S.admins.length){tbl.innerHTML='';empty.hidden=false;empty.textContent=t('no_admins');return;} empty.hidden=true;
+    tbl.innerHTML=`<thead><tr><th>${esc(t('name'))}</th><th>${esc(t('contact'))}</th><th>${esc(t('status'))}</th><th>${esc(t('permissions'))}</th><th>${esc(t('clients_access'))}</th><th></th></tr></thead><tbody>${S.admins.map(a=>{
+      const ps=a.is_owner?[t('owner_everything')]:a.permissions.map(p=>`${p.permission_key}${p.expires_at?' · '+fmtExpiry(p.expires_at):''}`);
+      return `<tr data-id="${a.id}"><td><div class="cell-main">${esc(a.name)} ${a.is_owner?`<span class="tag gold">${esc(t('owner_everything'))}</span>`:''}</div><div class="cell-sub">${esc(a.name_ar||'')}</div></td><td>${esc(a.email)}<div class="cell-sub">${esc(a.phone)}</div></td><td>${a.active?`<span class="tag green">${esc(t('active_status'))}</span>`:`<span class="tag red">${esc(t('disabled_status'))}</span>`}</td><td>${ps.map(x=>`<span class="tag blue" style="margin:2px">${esc(x)}</span>`).join('')}</td><td>${a.is_owner?esc(t('all')):a.client_access.length}</td><td><div class="row-actions">${a.is_owner?'':`<button class="btn ghost sm" data-act="perm">${esc(t('permissions'))}</button><button class="iconbtn" data-act="edit">${UI.icon('pencil')}</button><button class="iconbtn danger" data-act="del">${UI.icon('trash')}</button>`}</div></td></tr>`;}).join('')}</tbody>`;
+    tbl.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{const a=S.admins.find(x=>x.id===+b.closest('tr').dataset.id);if(!a)return;if(b.dataset.act==='perm')permissionModal(a);if(b.dataset.act==='edit')adminFormModal(a);if(b.dataset.act==='del')deleteAdmin(a);});
+  }
+
+  function adminFormModal(a){
+    const edit=!!a; UI.openModal(`<h2>${edit?t('edit_admin'):t('add_admin')}</h2><div class="grid2"><label class="field"><span>${esc(t('name'))}</span><input class="input" id="afName" maxlength="120" value="${edit?esc(a.name):''}"></label><label class="field"><span>${esc(t('arabic_name'))}</span><input class="input" id="afAr" dir="rtl" maxlength="120" value="${edit?esc(a.name_ar||''):''}"></label><label class="field"><span>${esc(t('email'))}</span><input class="input" id="afEmail" type="email" value="${edit?esc(a.email):''}"></label><label class="field"><span>${esc(t('phone'))}</span><input class="input" id="afPhone" value="${edit?esc(a.phone):''}"></label>${edit?`<label class="check"><input id="afActive" type="checkbox" ${a.active?'checked':''}> ${esc(t('active_status'))}</label>`:''}<label class="field"><span>${esc(edit?t('new_password_optional'):t('initial_password_optional'))}</span><input class="input" id="afPw" type="password" minlength="8"></label></div><div class="modal-foot"><button class="btn ghost" id="afCancel">${esc(t('cancel'))}</button><button class="btn primary" id="afSave">${esc(t('save'))}</button></div>`);
+    document.getElementById('afCancel').onclick=()=>UI.closeModal(); document.getElementById('afSave').onclick=async()=>{const body={name:afName.value.trim(),name_ar:afAr.value.trim(),email:afEmail.value.trim(),phone:afPhone.value.trim()};const pw=afPw.value.trim();if(pw)body.password=pw;if(edit)body.active=afActive.checked?1:0;try{const r=await UI.api(edit?'/admin/admins/'+a.id:'/admin/admins',{method:edit?'PUT':'POST',body});UI.closeModal();UI.toast(edit?t('saved'):`${t('admin_created')}${r.initial_password}`,'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}};
+  }
+
+  function toIsoOrNull(id){const v=document.getElementById(id)?.value;return v?new Date(v).toISOString():null;}
+  function permissionModal(a){
+    const rows=S.permissionDefs.map(p=>{p.label=t(p.key);const cur=a.permissions.find(x=>x.permission_key===p.key);const ex=cur&&cur.expires_at?new Date(cur.expires_at):null;const val=ex&&!Number.isNaN(ex.getTime())?new Date(ex.getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';return `<div style="display:grid;grid-template-columns:1fr 220px;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:9px 0"><label class="check"><input type="checkbox" data-perm="${esc(p.key)}" ${cur?'checked':''}> ${esc(p.label)}</label><input class="input" type="datetime-local" data-exp="${esc(p.key)}" value="${val}" placeholder="${esc(t('permanent_access_hint'))}"></div>`;}).join('');
+    const clients=S.clients.map(c=>{const x=a.client_access.find(y=>y.client_id===c.id);return `<label class="check" style="display:flex;gap:8px;margin:5px 0"><input type="checkbox" data-client="${c.id}" ${x?'checked':''}> ${esc(cname(c))}</label>`;}).join('');
+    UI.openModal(`<h2>Permissions — ${esc(a.name)}</h2><p class="muted">${esc(t('permanent_access_hint'))}</p><h3>${esc(t('what_admin_do'))}</h3><div>${rows}</div><h3 style="margin-top:18px">${esc(t('which_clients'))}</h3><div style="max-height:220px;overflow:auto">${clients||`<span class="muted">${esc(t('no_clients'))}</span>`}</div><label class="field" style="margin-top:12px"><span>${esc(t('client_access_expires'))}</span><input class="input" id="accessExp" type="datetime-local"></label><div class="modal-foot"><button class="btn ghost" id="pmCancel">${esc(t('cancel'))}</button><button class="btn primary" id="pmSave">${esc(t('save_permissions'))}</button></div>`,{wide:true});
+    document.getElementById('pmCancel').onclick=()=>UI.closeModal(); document.getElementById('pmSave').onclick=async()=>{const permissions=[...document.querySelectorAll('[data-perm]:checked')].map(x=>({permission_key:x.dataset.perm,expires_at:document.querySelector(`[data-exp="${x.dataset.perm}"]`)?.value?new Date(document.querySelector(`[data-exp="${x.dataset.perm}"]`).value).toISOString():null}));const accessExp=toIsoOrNull('accessExp');const clients=[...document.querySelectorAll('[data-client]:checked')].map(x=>({client_id:+x.dataset.client,expires_at:accessExp}));try{await UI.api('/admin/admins/'+a.id+'/permissions',{method:'PUT',body:{permissions}});await UI.api('/admin/admins/'+a.id+'/client-access',{method:'PUT',body:{clients}});UI.closeModal();UI.toast(t('permissions_saved'),'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}};
+  }
+
+  async function deleteAdmin(a){if(!(await UI.confirmBox(`${t('delete_admin_confirm')} (${a.name})`)))return;try{await UI.api('/admin/admins/'+a.id,{method:'DELETE'});UI.toast(t('admin_deleted'),'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}}
+
+  async function loadSettings(){if(!has('settings'))return;try{const d=await UI.api('/settings');const x=d.settings||{};setNameEn.value=x['brand.name_en']||'';setNameAr.value=x['brand.name_ar']||'';setTagEn.value=x['brand.tagline_en']||'';setTagAr.value=x['brand.tagline_ar']||'';}catch(e){UI.errToast(e);}}
+  async function saveSettingsForm(){try{await UI.api('/settings',{method:'PUT',body:{'brand.name_en':setNameEn.value.trim(),'brand.name_ar':setNameAr.value.trim(),'brand.tagline_en':setTagEn.value.trim(),'brand.tagline_ar':setTagAr.value.trim()}});UI.toast(t('saved'),'ok');}catch(e){UI.errToast(e);}}
+  async function loadAudit(){const tEl=document.getElementById('auditTbl');if(!tEl||!has('settings'))return;try{const d=await UI.api('/admin/audit');tEl.innerHTML=`<thead><tr><th>${esc(t('date'))}</th><th>${esc(t('name'))}</th><th>${esc(t('actions'))}</th><th>${esc(t('file'))}</th></tr></thead><tbody>${(d.logs||[]).map(x=>`<tr><td class="cell-sub">${esc(window.I18N.fmtDate(x.created_at))}</td><td>${esc(x.actor_name||'System')}</td><td>${esc(x.action)}</td><td>${esc(x.entity_type)} ${esc(x.entity_id||'')}</td></tr>`).join('')}</tbody>`;}catch(e){UI.errToast(e);}}
 
   /* --------------------------------- stats ---------------------------------- */
   async function loadStats() {
@@ -61,11 +117,12 @@
       const s = d.stats;
       document.getElementById('stClients').textContent = s.clients;
       document.getElementById('stFiles').textContent = s.files;
-      document.getElementById('stUnread').textContent = s.unread;
+      document.getElementById('stUnread').textContent = s.inbox_count ?? s.unread;
       document.getElementById('stBytes').textContent = window.I18N.fmtSize(s.bytes);
       const badge = document.getElementById('inboxBadge');
-      badge.hidden = !s.unread;
-      badge.textContent = s.unread > 99 ? '99+' : s.unread;
+      const inboxCount = s.inbox_count ?? s.unread;
+      badge.hidden = !inboxCount;
+      badge.textContent = inboxCount > 99 ? '99+' : inboxCount;
     } catch (e) { UI.errToast(e); }
   }
 
@@ -106,9 +163,9 @@
           <td class="cell-sub">${esc(window.I18N.fmtDate(c.last_upload))}</td>
           <td><div class="row-actions">
             <button class="iconbtn" data-act="folder" title="${esc(t('open_folder'))}">${UI.icon('eye')}</button>
-            <button class="iconbtn" data-act="edit" title="${esc(t('edit'))}">${UI.icon('pencil')}</button>
-            <button class="iconbtn" data-act="reset" title="${esc(t('reset_password'))}">${UI.icon('key')}</button>
-            <button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>
+            ${has('chat') ? `<button class="iconbtn" data-act="chat" title="${esc(t('daily_chat'))}">💬</button>` : ''}
+            ${has('manage_clients') ? `<button class="iconbtn" data-act="edit" title="${esc(t('edit'))}">${UI.icon('pencil')}</button>` : ''}
+            ${has('manage_clients') ? `<button class="iconbtn" data-act="reset" title="${esc(t('reset_password'))}">${UI.icon('key')}</button><button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>` : ''}
           </div></td>
         </tr>`).join('')}</tbody>`;
 
@@ -117,11 +174,23 @@
       const id = +b.closest('tr').dataset.id;
       const c = S.clients.find((x) => x.id === id);
       if (b.dataset.act === 'folder') openFolder(id);
+      if (b.dataset.act === 'chat') chatModal(c);
       if (b.dataset.act === 'edit') clientFormModal(c);
       if (b.dataset.act === 'reset') resetPw(c);
       if (b.dataset.act === 'del') delClient(c);
     }));
     tbl.querySelectorAll('tbody tr').forEach((tr) => (tr.onclick = () => openFolder(+tr.dataset.id)));
+  }
+
+  async function chatModal(c){
+    if(!has('chat'))return;
+    let msgs=[]; try{msgs=(await UI.api('/chat/'+c.id,{csrf:false})).messages||[];}catch(e){UI.errToast(e);return;}
+    const renderMsgs=(arr)=>arr.length?arr.map(m=>`<div style="align-self:${m.sender_role==='admin'?'flex-end':'flex-start'};max-width:80%;padding:8px 10px;border:1px solid var(--line);border-radius:9px"><b>${esc(m.sender_role==='admin'?t('office_panel'):cname(c))}</b><div>${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`).join(''):`<span class="muted">${esc(t('no_messages_today'))}</span>`;
+    UI.openModal(`<h2>${esc(t('daily_chat'))} — ${esc(cname(c))}</h2><p class="muted">${esc(t('chat_resets'))}</p><div id="admChatList" style="height:300px;overflow:auto;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);padding:10px;border-radius:8px">${renderMsgs(msgs)}</div><div style="display:flex;gap:8px;margin-top:10px"><input class="input" id="admChatInput" maxlength="1000" placeholder="${esc(t('write_message'))}"><button class="btn primary" id="admChatSend">${esc(t('send'))}</button></div><div class="modal-foot"><button class="btn ghost" id="admChatClose">${esc(t('close'))}</button></div>`,{wide:true});
+    const box=document.getElementById('admChatList'); box.scrollTop=box.scrollHeight;
+    document.getElementById('admChatClose').onclick=()=>UI.closeModal();
+    const send=async()=>{const i=document.getElementById('admChatInput'),m=i.value.trim();if(!m)return;try{await UI.api('/chat/'+c.id,{method:'POST',body:{message:m}});i.value='';const d=await UI.api('/chat/'+c.id,{csrf:false});box.innerHTML=renderMsgs(d.messages||[]);box.scrollTop=box.scrollHeight;}catch(e){UI.errToast(e);}};
+    document.getElementById('admChatSend').onclick=send; document.getElementById('admChatInput').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
   }
 
   async function resetPw(c) {
@@ -225,10 +294,11 @@
       </div>
       <ul class="pendlist" id="fmPend"></ul>
       <div class="grid2" style="align-items:end">
-        <label class="field"><span>${esc(t('subfolder'))}</span><input class="input" id="fmFolder" maxlength="60" list="fmFolders" placeholder="${esc(t('subfolder_ph'))}"></label>
+        <label class="field"><span>${esc(t('destination_folder'))}</span><select class="input" id="fmFolderId"><option value="">${esc(t('root'))}</option>${(S.folderView.folderTree||[]).map(f=>`<option value="${f.id}">${esc(f.name)} · ${Number(f.file_count)||0} ${esc(t('files_count'))}</option>`).join('')}</select></label>
         <button class="btn primary" id="fmUpload" style="margin-block-end:.95rem" disabled>${UI.icon('upload')} ${esc(t('upload'))}</button>
       </div>
-      <datalist id="fmFolders">${folders.map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+      ${has('manage_folders')?`<button class="btn ghost sm" id="manageFoldersBtn" style="margin-bottom:10px">${esc(t('folders'))}</button>`:''}
+      ${(has('manage_clients') || has('manage_folders'))?`<button class="btn ghost sm" id="clientFolderAccessBtn" style="margin:0 0 10px 6px">${esc(t('client_folder_visibility'))}</button>`:''}
       <div class="folder-chips" id="fmChips" style="margin-block:4px 8px"></div>
       <table class="tbl" id="fmTbl"></table>
       <div class="empty" id="fmEmpty" hidden><div class="big"><svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></div>${esc(t('no_files_client'))}</div>`;
@@ -251,8 +321,8 @@
       if (!S.pending.length) return;
       const fd = new FormData();
       for (const f of S.pending) fd.append('files', f);
-      const folder = document.getElementById('fmFolder').value.trim();
-      if (folder) fd.append('folder', folder);
+      const folderId = document.getElementById('fmFolderId').value;
+      if (folderId) { const node=(S.folderView.folderTree||[]).find(x=>String(x.id)===String(folderId)); fd.append('folder_id',folderId); if(node) fd.append('folder',node.name); }
       const btn = document.getElementById('fmUpload');
       btn.disabled = true;
       try {
@@ -269,20 +339,115 @@
       } catch (e) { UI.errToast(e); btn.disabled = !S.pending.length; }
     };
 
+    const mfb=document.getElementById('manageFoldersBtn'); if(mfb) mfb.onclick=()=>folderManagerModal(client.id);
+    const cvb=document.getElementById('clientFolderAccessBtn'); if(cvb) cvb.onclick=()=>folderVisibilityModal(client.id);
     renderFolderTable();
     return entry;
   }
 
+
+  async function folderVisibilityModal(clientId){
+    try {
+      const d=await UI.api('/admin/clients/'+clientId+'/folder-visibility');
+      const folders=d.folders||[];
+      const roots=folders.filter(f=>!f.parent_id);
+      const children=(id)=>folders.filter(f=>f.parent_id===id);
+      const tree=(items,level=0)=>items.map(f=>`<label style="display:flex;align-items:center;gap:9px;padding:8px 0 8px ${level*22}px;border-bottom:1px solid var(--line-soft)"><input type="checkbox" class="folder-access-check" data-folder="${f.id}" ${f.selected?'checked':''}><span>${UI.icon('folder')}</span><span style="flex:1"><b>${esc(f.name)}</b><span class="muted" style="margin-left:7px">${Number(f.file_count)||0} ${esc(t('files_count'))}</span></span></label>${tree(children(f.id),level+1)}`).join('');
+      UI.openModal(`<h2>${esc(t('client_folder_visibility'))}</h2><p class="muted">${esc(t('visibility_hint'))}</p><label class="check" style="margin:12px 0;display:flex;gap:8px"><input type="checkbox" id="folderAccessRestricted" ${d.restricted?'checked':''}> ${esc(t('restrict_selected'))}</label><div id="folderAccessTree" style="max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px">${tree(roots)||`<div class="muted" style="padding:12px">${esc(t('no_folders_exist'))}</div>`}</div><div class="modal-foot"><button class="btn ghost" id="favCancel">${esc(t('cancel'))}</button><button class="btn primary" id="favSave">${esc(t('save_visibility'))}</button></div>`,{wide:true});
+      const sync=()=>{const on=document.getElementById('folderAccessRestricted').checked;document.querySelectorAll('.folder-access-check').forEach(x=>x.disabled=!on);};
+      document.getElementById('folderAccessRestricted').onchange=sync; sync();
+      document.getElementById('favCancel').onclick=()=>UI.closeModal();
+      document.getElementById('favSave').onclick=async()=>{
+        const restricted=document.getElementById('folderAccessRestricted').checked;
+        const folder_ids=[...document.querySelectorAll('.folder-access-check:checked')].map(x=>+x.dataset.folder);
+        if(restricted && !folder_ids.length){ if(!(await UI.confirmBox(t('no_folder_selected'))) ) return; }
+        try {
+          await UI.api('/admin/clients/'+clientId+'/folder-visibility',{method:'PUT',body:{restricted,folder_ids}});
+          UI.closeModal(); UI.toast(restricted?t('client_visibility_saved'):t('client_can_see_all'),'ok');
+          if(S.folderView && S.folderView.client && S.folderView.client.id===clientId) { S.folderView=await UI.api('/admin/client-folders/'+clientId); renderFolderTable(); }
+        } catch(e){UI.errToast(e);}
+      };
+    } catch(e){UI.errToast(e);}
+  }
+
+  async function folderManagerModal(clientId){
+    try {
+      const d=await UI.api('/admin/clients/'+clientId+'/folders'); const folders=d.folders||[]; const roots=folders.filter(f=>!f.parent_id); const children=(id)=>folders.filter(f=>f.parent_id===id);
+      const count=(n)=>`<span class="folder-count">${Number(n)||0} ${esc(t('files_count'))}</span>`;
+       const tree=(items,level=0)=>items.map(f=>`<div class="folder-row" draggable="true" data-folder-id="${f.id}" data-folder-parent="${f.parent_id??''}" style="display:flex;align-items:center;gap:8px;padding:8px 0 8px ${level*22}px;border-bottom:1px solid var(--line-soft)"><span class="folder-drag" title="${esc(t('drag_to_reorder'))}" aria-label="${esc(t('drag_to_reorder'))}">⠿</span><span>${UI.icon('folder')}</span><b style="flex:1">${esc(f.name)}</b>${count(f.file_count)}<button class="iconbtn" data-ren="${f.id}" title="${esc(t('rename_folder'))}">${UI.icon('pencil')}</button><button class="iconbtn danger" data-delete="${f.id}" title="${esc(t('remove'))}">${UI.icon('trash')}</button></div>${tree(children(f.id),level+1)}`).join('');
+      UI.openModal(`<h2>${esc(t('folders'))}</h2><p class="muted">${esc(t('folder_hint'))}</p><div id="folderTree">${tree(roots)||`<div class="muted">${esc(t('no_folders'))}</div>`}</div><div class="modal-foot"><button class="btn primary" id="newFolderBtn">+ ${esc(t('new_folder'))}</button><button class="btn ghost" id="folderClose">${esc(t('close'))}</button></div>`,{wide:true});
+      document.getElementById('folderClose').onclick=()=>UI.closeModal();
+      document.getElementById('newFolderBtn').onclick=async()=>{const opts=`<option value="">${esc(t('root'))}</option>`+folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');UI.openModal(`<h2>${esc(t('new_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="nfName" maxlength="120"></label><label class="field"><span>${esc(t('inside'))}</span><select class="input" id="nfParent">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="nfC">${esc(t('cancel'))}</button><button class="btn primary" id="nfS">${esc(t('create'))}</button></div>`);document.getElementById('nfC').onclick=()=>UI.closeModal();document.getElementById('nfS').onclick=async()=>{try{await UI.api('/admin/clients/'+clientId+'/folders',{method:'POST',body:{name:document.getElementById('nfName').value.trim(),parent_id:document.getElementById('nfParent').value||null}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};};
+      document.querySelectorAll('[data-ren]').forEach(b=>b.onclick=async()=>{const f=folders.find(x=>x.id===+b.dataset.ren);if(!f)return;UI.openModal(`<h2>${esc(t('rename_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="rfName" value="${esc(f.name)}"></label><div class="modal-foot"><button class="btn ghost" id="rfC">${esc(t('cancel'))}</button><button class="btn primary" id="rfS">${esc(t('save'))}</button></div>`);document.getElementById('rfC').onclick=()=>UI.closeModal();document.getElementById('rfS').onclick=async()=>{try{await UI.api('/admin/folders/'+f.id,{method:'PUT',body:{name:document.getElementById('rfName').value.trim()}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};});
+      // Drag-and-drop reordering: drag a folder and drop it onto a sibling to place it there.
+      let draggedFolderId=null;
+      const rows=[...document.querySelectorAll('.folder-row')];
+      rows.forEach(row=>{
+        row.addEventListener('dragstart',e=>{ draggedFolderId=Number(row.dataset.folderId); row.classList.add('dragging'); if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(draggedFolderId));} });
+        row.addEventListener('dragend',()=>{draggedFolderId=null;rows.forEach(r=>r.classList.remove('dragging','drag-over'));});
+        row.addEventListener('dragover',e=>{
+          const source=folders.find(x=>x.id===draggedFolderId), target=folders.find(x=>x.id===Number(row.dataset.folderId));
+          if(!source || !target || source.id===target.id || (source.parent_id??null)!==(target.parent_id??null)) return;
+          e.preventDefault(); if(e.dataTransfer)e.dataTransfer.dropEffect='move'; rows.forEach(r=>r.classList.remove('drag-over')); row.classList.add('drag-over');
+        });
+        row.addEventListener('dragleave',()=>row.classList.remove('drag-over'));
+        row.addEventListener('drop',async e=>{
+          e.preventDefault(); row.classList.remove('drag-over');
+          const sourceId=draggedFolderId || Number(e.dataTransfer?.getData('text/plain')); const targetId=Number(row.dataset.folderId);
+          rows.forEach(r=>r.classList.remove('dragging','drag-over')); if(!sourceId || sourceId===targetId)return;
+          const source=folders.find(x=>x.id===sourceId), target=folders.find(x=>x.id===targetId);
+          if(!source || !target)return;
+          if((source.parent_id??null)!==(target.parent_id??null)){UI.toast(t('drag_same_level'),'error');return;}
+          const siblings=folders.filter(x=>(x.parent_id??null)===(source.parent_id??null)).sort((a,b)=>a.sort_order-b.sort_order);
+          const from=siblings.findIndex(x=>x.id===sourceId), to=siblings.findIndex(x=>x.id===targetId); if(from<0||to<0)return;
+          const [moved]=siblings.splice(from,1); siblings.splice(to,0,moved);
+          try{ await UI.api('/admin/folders/reorder',{method:'PUT',body:{items:siblings.map((x,i)=>({id:x.id,sort_order:i+1}))}}); UI.toast(t('folder_order_saved'),'ok'); UI.closeModal(); await folderManagerModal(clientId); }catch(err){UI.errToast(err);}
+        });
+      });
+    }catch(e){UI.errToast(e);}
+  }
+
   function renderFolderTable() {
     if (!S.folderView || !document.getElementById('fmTbl')) return;
-    const { files, folders } = S.folderView;
+    const { files, folders, folderTree } = S.folderView;
     const chips = document.getElementById('fmChips');
-    if (folders.length) {
+
+    // IMPORTANT: use the same persisted folder order as the client page.
+    // The old admin view built this list from file.folder and sorted it alphabetically,
+    // which made the admin see a different order from the client's view.
+    const orderedFolderNames = [];
+    const seenFolderNames = new Set();
+    for (const node of (folderTree || [])) {
+      if (!seenFolderNames.has(node.name)) {
+        orderedFolderNames.push(node.name);
+        seenFolderNames.add(node.name);
+      }
+    }
+    // Keep any legacy text-only folders that are not yet linked to a folder record.
+    for (const name of (folders || [])) {
+      if (!seenFolderNames.has(name)) {
+        orderedFolderNames.push(name);
+        seenFolderNames.add(name);
+      }
+    }
+
+    if (orderedFolderNames.length) {
       chips.innerHTML = [`<button class="fchip ${!S.folderFilter ? 'active' : ''}" data-f="">${esc(t('all'))}</button>`]
-        .concat(folders.map((f) => `<button class="fchip ${S.folderFilter === f ? 'active' : ''}" data-f="${esc(f)}">${esc(f)}</button>`)).join('');
+        .concat(orderedFolderNames.map((f) => `<button class="fchip ${S.folderFilter === f ? 'active' : ''}" data-f="${esc(f)}">${esc(f)}</button>`)).join('');
       chips.querySelectorAll('.fchip').forEach((b) => (b.onclick = () => { S.folderFilter = b.dataset.f; renderFolderTable(); }));
     } else chips.innerHTML = '';
-    const shown = files.filter((f) => !S.folderFilter || f.folder === S.folderFilter);
+
+    // Keep files in the same folder order as the folder chips. Files within a folder
+    // remain alphabetically sorted for a stable, predictable view.
+    const folderRank = new Map(orderedFolderNames.map((name, index) => [name, index]));
+    const shown = files
+      .filter((f) => !S.folderFilter || f.folder === S.folderFilter)
+      .slice()
+      .sort((a, b) => {
+        const ar = folderRank.has(a.folder) ? folderRank.get(a.folder) : Number.MAX_SAFE_INTEGER;
+        const br = folderRank.has(b.folder) ? folderRank.get(b.folder) : Number.MAX_SAFE_INTEGER;
+        return ar - br || String(a.name || '').localeCompare(String(b.name || ''));
+      });
     document.getElementById('fmTbl').innerHTML = fileTableHTML(shown, { showClient: false });
     document.getElementById('fmEmpty').hidden = shown.length > 0;
     wireFolderActions();
@@ -304,9 +469,9 @@
           <td class="cell-sub">${esc(window.I18N.fmtDate(f.created_at))}</td>
           <td><div class="row-actions">
             <a class="iconbtn" href="/api/file/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
-            <button class="iconbtn" data-act="rn" title="${esc(t('rename'))}">${UI.icon('pencil')}</button>
-            <button class="iconbtn" data-act="mv" title="${esc(t('move'))}">${UI.icon('move')}</button>
-            <button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>
+            ${has('view_files') ? `<button class="iconbtn ${f.has_unread_note ? 'note-unread' : ''}" data-act="note" title="${esc(f.has_unread_note ? t('unread_note') : t('note_button'))}">📝</button>` : ''}${has('rename_files') ? `<button class="iconbtn" data-act="rn" title="${esc(t('rename'))}">${UI.icon('pencil')}</button>` : ''}
+            ${has('manage_folders') ? `<button class="iconbtn" data-act="mv" title="${esc(t('move'))}">${UI.icon('move')}</button>` : ''}
+            ${has('delete_files') ? `<button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>` : ''}
           </div></td>
         </tr>`).join('')}</tbody>`;
   }
@@ -319,10 +484,26 @@
       const id = +b.closest('tr').dataset.id;
       const f = S.folderView.files.find((x) => x.id === id);
       if (!f) return;
+      if (b.dataset.act === 'note') noteModal(f, refreshFolder);
       if (b.dataset.act === 'rn') renameModal(f, refreshFolder);
       if (b.dataset.act === 'mv') moveModal(f, refreshFolder);
       if (b.dataset.act === 'del') delFile(f, refreshFolder);
     }));
+  }
+
+  /* -------------------------------- file notes -------------------------------- */
+  async function noteModal(f, after) {
+    try {
+      const d = await UI.api('/admin/files/' + f.id + '/notes');
+      f.has_unread_note = false;
+      const render = (notes) => notes.length ? notes.map(n => `<div class="note-card"><div class="note-head"><b>${esc(n.author_name || t('name'))}</b><span class="muted">${esc(window.I18N.fmtDate(n.created_at))}</span></div><div class="note-body">${esc(n.note).replace(/\n/g,'<br>')}</div>${has('delete_notes') ? `<button class="iconbtn danger" data-note-delete="${n.id}" title="${esc(t('delete_note'))}">${UI.icon('trash')}</button>` : ''}</div>`).join('') : `<div class="muted" style="padding:12px 0">${esc(t('no_notes'))}</div>`;
+      UI.openModal(`<h2>📝 ${esc(t('notes'))}</h2><p class="sub">${esc(f.name)}</p><div id="notesList" class="notes-list">${render(d.notes||[])}</div><label class="field"><span>${esc(t('note_button'))}</span><textarea class="input" id="fileNoteInput" rows="4" maxlength="2000" placeholder="${esc(t('note_placeholder'))}"></textarea></label><p class="muted" style="font-size:.85rem">${esc(t('note_permission_hint'))}</p><div class="modal-foot"><button class="btn ghost" id="noteClose">${esc(t('close'))}</button><button class="btn primary" id="noteAdd">${esc(t('add_note'))}</button></div>`,{wide:true});
+      const list=document.getElementById('notesList');
+      list.querySelectorAll('[data-note-delete]').forEach(b=>b.onclick=async()=>{if(!(await UI.confirmBox(t('delete_note_confirm'))))return;try{await UI.api('/admin/files/'+f.id+'/notes/'+b.dataset.noteDelete,{method:'DELETE'});const nd=await UI.api('/admin/files/'+f.id+'/notes');list.innerHTML=render(nd.notes||[]);wireDeletes();if(after)after();}catch(e){UI.errToast(e);}});
+      function wireDeletes(){list.querySelectorAll('[data-note-delete]').forEach(b=>b.onclick=async()=>{if(!(await UI.confirmBox(t('delete_note_confirm'))))return;try{await UI.api('/admin/files/'+f.id+'/notes/'+b.dataset.noteDelete,{method:'DELETE'});const nd=await UI.api('/admin/files/'+f.id+'/notes');list.innerHTML=render(nd.notes||[]);wireDeletes();if(after)after();}catch(e){UI.errToast(e);}});}
+      document.getElementById('noteClose').onclick=()=>{UI.closeModal();if(after)after();};
+      document.getElementById('noteAdd').onclick=async()=>{const input=document.getElementById('fileNoteInput');const note=input.value.trim();if(!note){UI.toast(t('empty_note'),'err');return;}try{await UI.api('/admin/files/'+f.id+'/notes',{method:'POST',body:{note}});input.value='';const nd=await UI.api('/admin/files/'+f.id+'/notes');list.innerHTML=render(nd.notes||[]);wireDeletes();if(after)after();UI.toast(t('note_added'),'ok');}catch(e){UI.errToast(e);}};
+    } catch(e) { UI.errToast(e); }
   }
 
   /* ----------------------- rename / move / delete a file ---------------------- */
@@ -387,6 +568,8 @@
     catch (e) { UI.errToast(e); }
   }
 
+  async function discardAllInbox(){ if(!has('delete_files')) return; if(!(await UI.confirmBox(`${t('discard')} — ${t('delete_file_confirm')}`)))return; try{const r=await UI.api('/admin/inbox/discard-all',{method:'POST',body:{}});UI.toast(`${r.count} inbox files discarded`,'ok');await Promise.all([loadStats(),loadClients()]);render();}catch(e){UI.errToast(e);} }
+
   async function renderInbox() {
     await loadInbox();
     loadStats(); // badge clears after marking read
@@ -409,6 +592,7 @@
         </div>
         <div class="inbox-actions">
           <a class="iconbtn" href="/api/file/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
+          <button class="iconbtn ${f.has_unread_note ? 'note-unread' : ''}" data-act="note" title="${esc(f.has_unread_note ? t('unread_note') : t('note_button'))}">📝</button>
           <button class="btn sm primary" data-act="save">${esc(t('save_to_folder'))}</button>
           <button class="btn sm danger" data-act="del">${UI.icon('trash')} ${esc(t('discard'))}</button>
         </div>
@@ -418,6 +602,7 @@
       const id = +b.closest('.inbox-item').dataset.id;
       const f = S.inbox.find((x) => x.id === id);
       if (!f) return;
+      if (b.dataset.act === 'note') noteModal(f, renderInbox);
       if (b.dataset.act === 'save') moveModal({ ...f, folder: '' }, () => { renderInbox(); loadClients(); loadStats(); });
       if (b.dataset.act === 'del') {
         if (!(await UI.confirmBox(t('delete_file_confirm')))) return;

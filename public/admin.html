@@ -18,6 +18,8 @@
       <button class="navlink active" data-tab="clients"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></span><span data-i18n="clients">Clients</span></button>
       <button class="navlink" data-tab="inbox"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M3 3h18a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 10 3.2 3.2H9l1-1h4l1 1h2.8L21 13V5H3v8Z"/></svg></span><span data-i18n="inbox">Inbox</span><span class="nav-badge" id="inboxBadge" hidden></span></button>
       <button class="navlink" data-tab="files"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5ZM7 12h10v1.6H7V12Zm0 3.4h10V17H7v-1.6Z"/></svg></span><span data-i18n="all_files">All files</span></button>
+      <button class="navlink" data-tab="admins" id="adminsNav"><span class="ni">⚙</span><span data-i18n="admins_permissions">Admins & permissions</span></button>
+      <button class="navlink" data-tab="settings" id="settingsNav"><span class="ni">✦</span><span data-i18n="portal_settings">Portal settings</span></button>
     </nav>
     <div class="side-foot">
       <button class="btn ghost light sm block" id="langBtn"><span id="langBtnText">العربية</span></button>
@@ -71,6 +73,25 @@
           <select class="input plain" id="fileClientFilter" style="min-width:180px"></select>
         </div>
         <div class="card table-card"><table class="tbl" id="allFilesTbl"></table><div class="empty" id="filesEmpty" hidden></div></div>
+      </section>
+
+      <section class="tab" id="tab-admins" hidden>
+        <div class="toolbar"><div><h2 style="margin:0" data-i18n="admins_permissions">Admins & permissions</h2><p class="muted" data-i18n="create_admins_hint">Create admins, choose exactly what they can do, which clients they can see, and when access expires.</p></div><button class="btn primary" id="addAdminBtn" data-i18n="add_admin">+ Add admin</button></div>
+        <div class="card table-card"><table class="tbl" id="adminsTbl"></table><div class="empty" id="adminsEmpty" hidden></div></div>
+      </section>
+
+      <section class="tab" id="tab-settings" hidden>
+        <div class="card" style="padding:20px">
+          <h2 data-i18n="portal_settings">Portal settings</h2><p class="muted" data-i18n="settings_hint">These values are editable without changing the code.</p>
+          <div class="grid2">
+            <label class="field"><span data-i18n="brand_name_en">Brand name (English)</span><input class="input" id="setNameEn" maxlength="200"></label>
+            <label class="field"><span data-i18n="brand_name_ar">Brand name (Arabic)</span><input class="input" id="setNameAr" dir="rtl" maxlength="200"></label>
+            <label class="field"><span data-i18n="tagline_en">Tagline (English)</span><input class="input" id="setTagEn" maxlength="200"></label>
+            <label class="field"><span data-i18n="tagline_ar">Tagline (Arabic)</span><input class="input" id="setTagAr" dir="rtl" maxlength="200"></label>
+          </div>
+          <div style="margin-top:16px"><button class="btn primary" id="saveSettingsBtn" data-i18n="save_settings">Save settings</button></div>
+        </div>
+        <div class="card table-card" style="margin-top:16px"><div style="padding:16px 16px 0"><h2 data-i18n="audit_log">Audit log</h2></div><table class="tbl" id="auditTbl"></table></div>
       </section>
     </main>
   </div>

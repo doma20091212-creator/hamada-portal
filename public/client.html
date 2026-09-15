@@ -31,7 +31,6 @@
       </div>
       <div class="cli-stats">
         <div class="chipbox"><b id="stCount">0</b><span data-i18n="documents">documents</span></div>
-        <div class="chipbox"><b id="stBytes">0</b><span data-i18n="size">total size</span></div>
       </div>
     </section>
 
@@ -66,6 +65,12 @@
         <div class="sec-sub"><h3 data-i18n="sent_title">Sent items</h3><ul class="sentlist" id="sentList"></ul></div>
       </aside>
     </div>
+
+    <section class="card sec" style="margin-top:16px">
+      <div class="sec-head"><div><h2 data-i18n="daily_chat">Daily chat</h2><p class="muted" data-i18n="chat_resets">This chat automatically starts fresh each day.</p></div></div>
+      <div id="chatList" style="max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px"><input class="input" id="chatInput" maxlength="1000" data-i18n-ph="write_message" placeholder="Write a message…"><button class="btn primary" id="chatSend" data-i18n="send">Send</button></div>
+    </section>
   </main>
 
   <div class="toasts" id="toasts"></div>
