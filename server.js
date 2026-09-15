@@ -517,14 +517,14 @@ app.get('/api/admin/client-folders/:id', requireAdmin, async (req, res) => {
 
   const folders = [...new Set(files.map(f => f.folder).filter(Boolean))].sort();
   const folderTree = await db.all(`WITH RECURSIVE folder_tree AS (
-       SELECT id,client_id,parent_id,name,sort_order,drive_id,ARRAY[sort_order,id]::int[] AS order_path
+       SELECT id,client_id,parent_id,name,sort_order,drive_id,name::text AS folder_path,ARRAY[sort_order,id]::int[] AS order_path
        FROM folders WHERE client_id=$1 AND parent_id IS NULL
        UNION ALL
-       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
+       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,(ft.folder_path || ' / ' || f.name) AS folder_path,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
        FROM folders f JOIN folder_tree ft ON f.parent_id=ft.id WHERE f.client_id=$1
      )
-     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,COUNT(fi.id)::int AS file_count
-     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.order_path
+     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,COUNT(fi.id)::int AS file_count
+     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,ft.order_path
      ORDER BY ft.order_path`, [id]);
 
   res.json({ client: c, files, folders, folderTree });
@@ -548,14 +548,14 @@ app.get('/api/admin/clients/:id/files', requireAdmin, async (req, res) => {
 
   const folders = [...new Set(files.map(f => f.folder).filter(Boolean))].sort();
   const folderTree = await db.all(`WITH RECURSIVE folder_tree AS (
-       SELECT id,client_id,parent_id,name,sort_order,drive_id,ARRAY[sort_order,id]::int[] AS order_path
+       SELECT id,client_id,parent_id,name,sort_order,drive_id,name::text AS folder_path,ARRAY[sort_order,id]::int[] AS order_path
        FROM folders WHERE client_id=$1 AND parent_id IS NULL
        UNION ALL
-       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
+       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,(ft.folder_path || ' / ' || f.name) AS folder_path,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
        FROM folders f JOIN folder_tree ft ON f.parent_id=ft.id WHERE f.client_id=$1
      )
-     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,COUNT(fi.id)::int AS file_count
-     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.order_path
+     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,COUNT(fi.id)::int AS file_count
+     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,ft.order_path
      ORDER BY ft.order_path`, [id]);
 
   res.json({ client: c, files, folders, folderTree });
@@ -786,21 +786,32 @@ app.put('/api/admin/clients/:id/folder-visibility', requireAdmin, async (req,res
 app.get('/api/admin/clients/:id/folders', requireAdmin, async (req,res)=>{
   const cid=parseInt(req.params.id,10); if(!(await requirePermission(req,res,'view_files',cid)))return res.status(403).json({error:'permission_denied'});
   const folders=await db.all(`WITH RECURSIVE folder_tree AS (
-       SELECT id,client_id,parent_id,name,sort_order,drive_id,ARRAY[sort_order,id]::int[] AS order_path
+       SELECT id,client_id,parent_id,name,sort_order,drive_id,name::text AS folder_path,ARRAY[sort_order,id]::int[] AS order_path
        FROM folders WHERE client_id=$1 AND parent_id IS NULL
        UNION ALL
-       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
+       SELECT f.id,f.client_id,f.parent_id,f.name,f.sort_order,f.drive_id,(ft.folder_path || ' / ' || f.name) AS folder_path,ft.order_path || ARRAY[f.sort_order,f.id]::int[]
        FROM folders f JOIN folder_tree ft ON f.parent_id=ft.id WHERE f.client_id=$1
      )
-     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,COUNT(fi.id)::int AS file_count
-     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.order_path
+     SELECT ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,COUNT(fi.id)::int AS file_count
+     FROM folder_tree ft LEFT JOIN files fi ON fi.folder_id=ft.id GROUP BY ft.id,ft.client_id,ft.parent_id,ft.name,ft.sort_order,ft.drive_id,ft.folder_path,ft.order_path
      ORDER BY ft.order_path`,[cid]); res.json({folders});
 });
 app.post('/api/admin/clients/:id/folders', requireAdmin, async (req,res)=>{
   const cid=parseInt(req.params.id,10); if(!(await requirePermission(req,res,'manage_folders',cid)))return res.status(403).json({error:'permission_denied'});
   const name=U.sanitizeName(req.body?.name||'',120); const parentId=req.body?.parent_id?parseInt(req.body.parent_id,10):null; if(!name)return res.status(400).json({error:'invalid_data'});
   let parentDrive=process.env.GOOGLE_DRIVE_FOLDER_ID; if(parentId){const p=await db.get(`SELECT drive_id FROM folders WHERE id=$1 AND client_id=$2`,[parentId,cid]);if(!p)return res.status(400).json({error:'invalid_parent'});parentDrive=p.drive_id;}
-  const drive=await createFolder(name,parentDrive); const r=await db.run(`INSERT INTO folders(client_id,parent_id,name,sort_order,drive_id) VALUES($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2),$4) RETURNING id`,[cid,parentId,name,drive.id]); await audit(req,'folder_created','folder',r.rows[0].id,{client_id:cid,name}); res.json({ok:true,folder:{id:r.rows[0].id,name,parent_id:parentId,drive_id:drive.id,file_count:0}});
+  const existing=await db.get(`SELECT id FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND name=$3 LIMIT 1`,[cid,parentId,name]);
+  if(existing)return res.status(409).json({error:'folder_exists'});
+  const drive=await createFolder(name,parentDrive);
+  try {
+    const r=await db.run(`INSERT INTO folders(client_id,parent_id,name,sort_order,drive_id) VALUES($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2),$4) RETURNING id`,[cid,parentId,name,drive.id]);
+    await audit(req,'folder_created','folder',r.rows[0].id,{client_id:cid,name});
+    res.json({ok:true,folder:{id:r.rows[0].id,name,parent_id:parentId,drive_id:drive.id,file_count:0}});
+  } catch(e) {
+    try { await deleteFile(drive.id); } catch(cleanErr) { console.error('[Drive] cleanup after folder insert failure:', cleanErr.message); }
+    if(e.code==='23505') return res.status(409).json({error:'folder_exists'});
+    throw e;
+  }
 });
 app.put('/api/admin/folders/reorder', requireAdmin, async (req,res)=>{
   const items=Array.isArray(req.body?.items)?req.body.items:[];
@@ -823,18 +834,39 @@ app.put('/api/admin/folders/reorder', requireAdmin, async (req,res)=>{
 
 app.put('/api/admin/folders/:id', requireAdmin, async (req,res)=>{
   const id=parseInt(req.params.id,10); const f=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]); if(!f)return res.status(404).json({error:'not_found'}); if(!(await requirePermission(req,res,'manage_folders',f.client_id)))return res.status(403).json({error:'permission_denied'});
-  const name=U.sanitizeName(req.body?.name||'',120); if(!name)return res.status(400).json({error:'invalid_data'}); await renameFolder(f.drive_id,name); await db.run(`UPDATE folders SET name=$1,updated_at=NOW() WHERE id=$2`,[name,id]); await audit(req,'folder_renamed','folder',id,{name}); res.json({ok:true});
+  const name=U.sanitizeName(req.body?.name||'',120);
+  if(!name)return res.status(400).json({error:'invalid_data'});
+  const duplicate=await db.get(`SELECT id FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND name=$3 AND id<>$4 LIMIT 1`,[f.client_id,f.parent_id,name,id]);
+  if(duplicate)return res.status(409).json({error:'folder_exists'});
+  await renameFolder(f.drive_id,name);
+  try { await db.run(`UPDATE folders SET name=$1,updated_at=NOW() WHERE id=$2`,[name,id]); } catch(e) { if(e.code==='23505')return res.status(409).json({error:'folder_exists'}); throw e; }
+  await audit(req,'folder_renamed','folder',id,{name}); res.json({ok:true});
 });
 app.delete('/api/admin/folders/:id', requireAdmin, async (req,res)=>{
-  const id=parseInt(req.params.id,10); const f=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]); if(!f)return res.status(404).json({error:'not_found'}); if(!(await requirePermission(req,res,'manage_folders',f.client_id)))return res.status(403).json({error:'permission_denied'});
-  const child=await db.get(`SELECT id FROM folders WHERE parent_id=$1 LIMIT 1`,[id]); const file=await db.get(`SELECT id FROM files WHERE folder_id=$1 LIMIT 1`,[id]); if(child||file)return res.status(400).json({error:'folder_not_empty'});
-  await deleteFile(f.drive_id); await db.run(`DELETE FROM folders WHERE id=$1`,[id]); await audit(req,'folder_deleted','folder',id,{client_id:f.client_id}); res.json({ok:true});
+  const id=parseInt(req.params.id,10);
+  const f=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]);
+  if(!f)return res.status(404).json({error:'not_found'});
+  if(!(await requirePermission(req,res,'manage_folders',f.client_id)))return res.status(403).json({error:'permission_denied'});
+  const child=await db.get(`SELECT id FROM folders WHERE parent_id=$1 LIMIT 1`,[id]);
+  const file=await db.get(`SELECT id FROM files WHERE folder_id=$1 LIMIT 1`,[id]);
+  if(child||file)return res.status(400).json({error:'folder_not_empty'});
+  try {
+    await deleteFile(f.drive_id);
+  } catch (e) {
+    console.error('[Drive] folder delete failed:', e.message);
+    return res.status(502).json({error:'folder_drive_delete_failed'});
+  }
+  await db.run(`DELETE FROM folders WHERE id=$1`,[id]);
+  await audit(req,'folder_deleted','folder',id,{client_id:f.client_id});
+  res.json({ok:true});
 });
 
 app.put('/api/admin/folders/:id/move', requireAdmin, async (req,res)=>{
   const id=parseInt(req.params.id,10); const f=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]); if(!f)return res.status(404).json({error:'not_found'}); if(!(await requirePermission(req,res,'manage_folders',f.client_id)))return res.status(403).json({error:'permission_denied'});
   const parentId=req.body?.parent_id?parseInt(req.body.parent_id,10):null; if(parentId===id)return res.status(400).json({error:'invalid_parent'});
   if(parentId){const p=await db.get(`SELECT * FROM folders WHERE id=$1 AND client_id=$2`,[parentId,f.client_id]);if(!p)return res.status(400).json({error:'invalid_parent'}); let cursor=p; while(cursor?.parent_id){if(cursor.parent_id===id)return res.status(400).json({error:'invalid_parent'});cursor=await db.get(`SELECT id,parent_id FROM folders WHERE id=$1`,[cursor.parent_id]);}}
+  const duplicate=await db.get(`SELECT id FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND name=$3 AND id<>$4 LIMIT 1`,[f.client_id,parentId,f.name,id]);
+  if(duplicate)return res.status(409).json({error:'folder_exists'});
   let driveParent=process.env.GOOGLE_DRIVE_FOLDER_ID; if(parentId){driveParent=(await db.get(`SELECT drive_id FROM folders WHERE id=$1`,[parentId])).drive_id;}
   await moveFolder(f.drive_id,driveParent);
   await db.run(`UPDATE folders SET parent_id=$1,sort_order=(SELECT COALESCE(MAX(sort_order),0)+1 FROM folders WHERE client_id=$2 AND parent_id IS NOT DISTINCT FROM $1),updated_at=NOW() WHERE id=$3`,[parentId,f.client_id,id]); await audit(req,'folder_moved','folder',id,{parent_id:parentId}); res.json({ok:true});
@@ -850,7 +882,7 @@ function todayPortalDate(){ return `((m.created_at AT TIME ZONE 'Africa/Cairo'):
 app.get('/api/chat/:clientId', requireAuth, async (req,res)=>{
   const cid=parseInt(req.params.clientId,10); if(req.user.role==='client' && cid!==req.user.id)return res.status(403).json({error:'forbidden'});
   if(req.user.role==='admin' && !(await requirePermission(req,res,'chat',cid)))return res.status(403).json({error:'permission_denied'});
-  const rows=await db.all(`SELECT m.id,m.client_id,m.sender_id,m.sender_role,m.message,m.created_at,u.name AS sender_name FROM chat_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.client_id=$1 AND ${todayPortalDate()} ORDER BY m.created_at ASC`,[cid]); res.json({messages:rows});
+  const rows=await db.all(`SELECT m.id,m.client_id,m.sender_id,m.sender_role,m.message,m.created_at,u.name AS sender_name,u.name_ar AS sender_name_ar FROM chat_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.client_id=$1 AND ${todayPortalDate()} ORDER BY m.created_at ASC`,[cid]); res.json({messages:rows});
 });
 app.post('/api/chat/:clientId', requireAuth, async (req,res)=>{
   const cid=parseInt(req.params.clientId,10); if(req.user.role==='client' && cid!==req.user.id)return res.status(403).json({error:'forbidden'}); if(req.user.role==='admin' && !(await requirePermission(req,res,'chat',cid)))return res.status(403).json({error:'permission_denied'});

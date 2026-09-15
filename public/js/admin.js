@@ -185,7 +185,7 @@
   async function chatModal(c){
     if(!has('chat'))return;
     let msgs=[]; try{msgs=(await UI.api('/chat/'+c.id,{csrf:false})).messages||[];}catch(e){UI.errToast(e);return;}
-    const renderMsgs=(arr)=>arr.length?arr.map(m=>`<div style="align-self:${m.sender_role==='admin'?'flex-end':'flex-start'};max-width:80%;padding:8px 10px;border:1px solid var(--line);border-radius:9px"><b>${esc(m.sender_role==='admin'?t('office_panel'):cname(c))}</b><div>${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`).join(''):`<span class="muted">${esc(t('no_messages_today'))}</span>`;
+    const renderMsgs=(arr)=>arr.length?arr.map(m=>{const sender=m.sender_role==='admin'?(window.I18N.lang==='ar'&&m.sender_name_ar?m.sender_name_ar:(m.sender_name||t('office_panel'))):(window.I18N.lang==='ar'&&c.name_ar?c.name_ar:c.name);return `<div style="align-self:${m.sender_role==='admin'?'flex-end':'flex-start'};max-width:80%;padding:8px 10px;border:1px solid var(--line);border-radius:9px"><b>${esc(sender)}</b><div>${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`;}).join(''):`<span class="muted">${esc(t('no_messages_today'))}</span>`;
     UI.openModal(`<h2>${esc(t('daily_chat'))} — ${esc(cname(c))}</h2><p class="muted">${esc(t('chat_resets'))}</p><div id="admChatList" style="height:300px;overflow:auto;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);padding:10px;border-radius:8px">${renderMsgs(msgs)}</div><div style="display:flex;gap:8px;margin-top:10px"><input class="input" id="admChatInput" maxlength="1000" placeholder="${esc(t('write_message'))}"><button class="btn primary" id="admChatSend">${esc(t('send'))}</button></div><div class="modal-foot"><button class="btn ghost" id="admChatClose">${esc(t('close'))}</button></div>`,{wide:true});
     const box=document.getElementById('admChatList'); box.scrollTop=box.scrollHeight;
     document.getElementById('admChatClose').onclick=()=>UI.closeModal();
@@ -299,7 +299,8 @@
       </div>
       ${has('manage_folders')?`<button class="btn ghost sm" id="manageFoldersBtn" style="margin-bottom:10px">${esc(t('folders'))}</button>`:''}
       ${(has('manage_clients') || has('manage_folders'))?`<button class="btn ghost sm" id="clientFolderAccessBtn" style="margin:0 0 10px 6px">${esc(t('client_folder_visibility'))}</button>`:''}
-      <div class="folder-chips" id="fmChips" style="margin-block:4px 8px"></div>
+      <div id="fmChips" style="margin-block:4px 8px"></div>
+      <div id="fmBrowser" class="filelist" style="margin-block:8px 10px"></div>
       <table class="tbl" id="fmTbl"></table>
       <div class="empty" id="fmEmpty" hidden><div class="big"><svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></div>${esc(t('no_files_client'))}</div>`;
     const entry = UI.openModal(html, { wide: true });
@@ -379,6 +380,24 @@
       document.getElementById('folderClose').onclick=()=>UI.closeModal();
       document.getElementById('newFolderBtn').onclick=async()=>{const opts=`<option value="">${esc(t('root'))}</option>`+folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');UI.openModal(`<h2>${esc(t('new_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="nfName" maxlength="120"></label><label class="field"><span>${esc(t('inside'))}</span><select class="input" id="nfParent">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="nfC">${esc(t('cancel'))}</button><button class="btn primary" id="nfS">${esc(t('create'))}</button></div>`);document.getElementById('nfC').onclick=()=>UI.closeModal();document.getElementById('nfS').onclick=async()=>{try{await UI.api('/admin/clients/'+clientId+'/folders',{method:'POST',body:{name:document.getElementById('nfName').value.trim(),parent_id:document.getElementById('nfParent').value||null}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};};
       document.querySelectorAll('[data-ren]').forEach(b=>b.onclick=async()=>{const f=folders.find(x=>x.id===+b.dataset.ren);if(!f)return;UI.openModal(`<h2>${esc(t('rename_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="rfName" value="${esc(f.name)}"></label><div class="modal-foot"><button class="btn ghost" id="rfC">${esc(t('cancel'))}</button><button class="btn primary" id="rfS">${esc(t('save'))}</button></div>`);document.getElementById('rfC').onclick=()=>UI.closeModal();document.getElementById('rfS').onclick=async()=>{try{await UI.api('/admin/folders/'+f.id,{method:'PUT',body:{name:document.getElementById('rfName').value.trim()}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};});
+      document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{
+        const f=folders.find(x=>x.id===+b.dataset.delete);
+        if(!f)return;
+        const ok=await UI.confirmBox(`${t('delete_folder_confirm')}\n\n${f.name}`);
+        if(!ok)return;
+        try{
+          await UI.api('/admin/folders/'+f.id,{method:'DELETE'});
+          UI.toast(t('folder_deleted'),'ok');
+          if(S.folderFilter && Number(S.folderFilter)===Number(f.id)) S.folderFilter=f.parent_id?String(f.parent_id):'';
+          UI.closeModal();
+          await folderManagerModal(clientId);
+          await openFolder(clientId);
+        }catch(e){
+          if(e && e.code==='folder_not_empty') UI.toast(t('folder_not_empty'),'err');
+          else if(e && e.code==='folder_drive_delete_failed') UI.toast(t('folder_drive_delete_failed'),'err');
+          else UI.errToast(e);
+        }
+      });
       // Drag-and-drop reordering: drag a folder and drop it onto a sibling to place it there.
       let draggedFolderId=null;
       const rows=[...document.querySelectorAll('.folder-row')];
@@ -411,45 +430,42 @@
     if (!S.folderView || !document.getElementById('fmTbl')) return;
     const { files, folders, folderTree } = S.folderView;
     const chips = document.getElementById('fmChips');
+    const browser = document.getElementById('fmBrowser');
+    const currentId = S.folderFilter ? Number(S.folderFilter) : null;
+    const nodes = folderTree || [];
+    const byId = new Map(nodes.map(f => [Number(f.id), f]));
+    const children = (pid) => nodes
+      .filter(f => (f.parent_id == null ? null : Number(f.parent_id)) === (pid == null ? null : Number(pid)))
+      .sort((a,b) => (Number(a.sort_order)||0)-(Number(b.sort_order)||0) || String(a.name).localeCompare(String(b.name)));
+    const current = currentId ? byId.get(currentId) : null;
+    const direct = children(currentId);
+    const directFiles = files.filter(f => (f.folder_id == null ? null : Number(f.folder_id)) === (currentId == null ? null : currentId))
+      .sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')));
 
-    // IMPORTANT: use the same persisted folder order as the client page.
-    // The old admin view built this list from file.folder and sorted it alphabetically,
-    // which made the admin see a different order from the client's view.
-    const orderedFolderNames = [];
-    const seenFolderNames = new Set();
-    for (const node of (folderTree || [])) {
-      if (!seenFolderNames.has(node.name)) {
-        orderedFolderNames.push(node.name);
-        seenFolderNames.add(node.name);
-      }
-    }
-    // Keep any legacy text-only folders that are not yet linked to a folder record.
-    for (const name of (folders || [])) {
-      if (!seenFolderNames.has(name)) {
-        orderedFolderNames.push(name);
-        seenFolderNames.add(name);
-      }
-    }
+    // Explorer-style navigation: only root folders appear at the root level.
+    // A subfolder is shown only after its parent is opened.
+    const roots = children(null);
+    const crumbs = [];
+    let cursor = current;
+    while (cursor) { crumbs.unshift(cursor); cursor = cursor.parent_id ? byId.get(Number(cursor.parent_id)) : null; }
+    chips.innerHTML = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <button class="fchip ${!currentId?'active':''}" data-nav-folder="">${UI.icon('folder')} ${esc(t('all'))}</button>
+      ${crumbs.map((c,i)=>`<span class="muted">/</span><button class="fchip ${i===crumbs.length-1?'active':''}" data-nav-folder="${c.id}">${esc(c.name)}</button>`).join('')}
+    </div>`;
+    chips.querySelectorAll('[data-nav-folder]').forEach(b=>b.onclick=()=>{ S.folderFilter=b.dataset.navFolder; renderFolderTable(); });
 
-    if (orderedFolderNames.length) {
-      chips.innerHTML = [`<button class="fchip ${!S.folderFilter ? 'active' : ''}" data-f="">${esc(t('all'))}</button>`]
-        .concat(orderedFolderNames.map((f) => `<button class="fchip ${S.folderFilter === f ? 'active' : ''}" data-f="${esc(f)}">${esc(f)}</button>`)).join('');
-      chips.querySelectorAll('.fchip').forEach((b) => (b.onclick = () => { S.folderFilter = b.dataset.f; renderFolderTable(); }));
-    } else chips.innerHTML = '';
+    const rows = direct.map(f => `
+      <button type="button" class="frow" data-open-admin-folder="${f.id}" style="width:100%;text-align:start;border:0;background:transparent;cursor:pointer;padding:10px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:10px">
+        <span>${UI.icon('folder')}</span><span style="flex:1"><b>${esc(f.name)}</b><div class="f-meta"><span class="tag blue">${esc(t('folder_type'))}</span> · ${Number(f.file_count)||0} ${esc(t('files_count'))}</div></span><span class="btn ghost sm">${UI.icon('eye')}</span>
+      </button>`).join('');
+    browser.innerHTML = rows || '';
+    browser.querySelectorAll('[data-open-admin-folder]').forEach(b=>b.onclick=()=>{ S.folderFilter=String(b.dataset.openAdminFolder); renderFolderTable(); });
+    browser.hidden = !rows;
 
-    // Keep files in the same folder order as the folder chips. Files within a folder
-    // remain alphabetically sorted for a stable, predictable view.
-    const folderRank = new Map(orderedFolderNames.map((name, index) => [name, index]));
-    const shown = files
-      .filter((f) => !S.folderFilter || f.folder === S.folderFilter)
-      .slice()
-      .sort((a, b) => {
-        const ar = folderRank.has(a.folder) ? folderRank.get(a.folder) : Number.MAX_SAFE_INTEGER;
-        const br = folderRank.has(b.folder) ? folderRank.get(b.folder) : Number.MAX_SAFE_INTEGER;
-        return ar - br || String(a.name || '').localeCompare(String(b.name || ''));
-      });
-    document.getElementById('fmTbl').innerHTML = fileTableHTML(shown, { showClient: false });
-    document.getElementById('fmEmpty').hidden = shown.length > 0;
+    // Only show files directly inside the current folder. Nested folders are never
+    // flattened into the parent or shown beside their parent.
+    document.getElementById('fmTbl').innerHTML = fileTableHTML(directFiles, { showClient: false });
+    document.getElementById('fmEmpty').hidden = directFiles.length > 0 || direct.length > 0;
     wireFolderActions();
   }
 
