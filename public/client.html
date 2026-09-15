@@ -8,6 +8,23 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="client-body">
+  <div class="page-loader" id="pageLoader" role="status" aria-live="polite" aria-label="Loading">
+    <div class="loader-card">
+      <div class="loader-mark" aria-hidden="true"><span></span></div>
+      <div class="loader-title" data-i18n="loading">Loading</div>
+      <div class="loader-sub" data-i18n="please_wait">Please wait</div>
+    </div>
+  </div>
+  <div class="process-loader" id="processLoader" role="status" aria-live="polite" aria-label="Processing" aria-hidden="true">
+    <div class="process-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div class="process-title" id="processLoaderText">Processing</div>
+        <div class="process-sub" data-i18n="please_wait">Please wait</div>
+      </div>
+    </div>
+  </div>
+
   <header class="cli-top">
     <div class="cli-brand">
       <img src="/assets/logo.png" alt="" class="cli-logo">

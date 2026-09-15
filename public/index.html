@@ -8,6 +8,23 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="auth-body">
+  <div class="page-loader" id="pageLoader" role="status" aria-live="polite" aria-label="Loading">
+    <div class="loader-card">
+      <div class="loader-mark" aria-hidden="true"><span></span></div>
+      <div class="loader-title" data-i18n="loading">Loading</div>
+      <div class="loader-sub" data-i18n="please_wait">Please wait</div>
+    </div>
+  </div>
+  <div class="process-loader" id="processLoader" role="status" aria-live="polite" aria-label="Processing" aria-hidden="true">
+    <div class="process-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div class="process-title" id="processLoaderText">Processing</div>
+        <div class="process-sub" data-i18n="please_wait">Please wait</div>
+      </div>
+    </div>
+  </div>
+
   <button class="lang-switch" id="langBtn" type="button">
     <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm7.9 9h-3.3a15.7 15.7 0 0 0-1.2-5.3A8 8 0 0 1 19.9 11ZM12 4c.9 1.2 1.9 3.5 2.2 7H9.8C10.1 7.5 11.1 5.2 12 4ZM4.1 13h3.3c.1 2 .5 3.8 1.2 5.3A8 8 0 0 1 4.1 13Zm3.3-2H4.1a8 8 0 0 1 4.5-5.3A15.7 15.7 0 0 0 7.4 11Zm4.6 8c-.9-1.2-1.9-3.5-2.2-7h4.4c-.3 3.5-1.3 5.8-2.2 7Zm2.5-2.7c.7-1.5 1.1-3.3 1.2-5.3h3.3a8 8 0 0 1-4.5 5.3Z"/></svg>
     <span id="langBtnText">العربية</span>

@@ -405,6 +405,70 @@ app.get('/api/admin/clients', requireAdmin, async (req, res) => {
   res.json({ clients: list });
 });
 
+app.post('/api/admin/clients/import', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const raw = req.body && Array.isArray(req.body.clients) ? req.body.clients : null;
+  if (!raw) return res.status(400).json({ error: 'invalid_import_format' });
+  if (raw.length > 1000) return res.status(400).json({ error: 'import_too_large', max: 1000 });
+
+  const clients = raw.map((item, index) => ({
+    index: index + 1,
+    name: String(item?.name ?? '').trim(),
+    name_ar: String(item?.name_ar ?? '').trim(),
+    email: String(item?.email ?? '').trim().toLowerCase(),
+    phone: U.normalizePhone(item?.phone ?? ''),
+    password: item?.password == null || String(item.password) === '' ? null : String(item.password),
+  }));
+
+  const invalid = [];
+  for (const c of clients) {
+    const reasons = [];
+    const cleanName = U.sanitizeName(c.name, 120);
+    if (!cleanName || cleanName.length < 2) reasons.push('invalid_name');
+    if (!U.validEmail(c.email)) reasons.push('invalid_email');
+    if (c.phone.length < 8) reasons.push('invalid_phone');
+    if (c.password !== null && c.password.length < 8) reasons.push('weak_password');
+    if (reasons.length) invalid.push({ row: c.index, name: c.name, email: c.email, phone: c.phone, reasons });
+  }
+
+  const valid = clients.filter(c => !invalid.some(x => x.row === c.index));
+  const seenEmail = new Set(), seenPhone = new Set(), internalDuplicates = [];
+  for (const c of valid) {
+    if (seenEmail.has(c.email) || seenPhone.has(c.phone)) {
+      internalDuplicates.push({ row: c.index, name: c.name, email: c.email, phone: c.phone, reason: 'duplicate_in_file' });
+      continue;
+    }
+    seenEmail.add(c.email); seenPhone.add(c.phone);
+  }
+  const uniqueValid = valid.filter(c => !internalDuplicates.some(x => x.row === c.index));
+  const created = [], skipped = [...internalDuplicates];
+
+  try {
+    await db.transaction(async ({ query }) => {
+      for (const c of uniqueValid) {
+        const existing = await query(`SELECT id, email, phone FROM users WHERE lower(email)=$1 OR phone=$2 LIMIT 1`, [c.email, c.phone]);
+        if (existing.rows[0]) {
+          const e = existing.rows[0];
+          skipped.push({ row: c.index, name: c.name, email: c.email, phone: c.phone, reason: String(e.email).toLowerCase() === c.email ? 'email_exists' : 'phone_exists' });
+          continue;
+        }
+        const tempPw = c.password || c.phone;
+        const r = await query(
+          `INSERT INTO users (role, name, name_ar, email, phone, password_hash, must_change, active)
+           VALUES ('client', $1, $2, $3, $4, $5, 1, 1) RETURNING id`,
+          [U.sanitizeName(c.name, 120), U.sanitizeName(c.name_ar, 120), c.email, c.phone, bcrypt.hashSync(tempPw, 10)]
+        );
+        created.push({ id: r.rows[0].id, row: c.index, name: c.name, email: c.email, phone: c.phone, used_phone_as_password: !c.password });
+      }
+    });
+    await audit(req, 'clients_imported', 'clients', null, { created: created.length, skipped: skipped.length, invalid: invalid.length });
+    res.json({ ok: true, created, skipped, invalid, counts: { total: raw.length, created: created.length, skipped: skipped.length, invalid: invalid.length } });
+  } catch (e) {
+    console.error('[clients import]', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
 app.post('/api/admin/clients', requireAdmin, async (req, res) => {
   if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
   const { name, name_ar = '', email, phone, password } = req.body || {};

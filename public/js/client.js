@@ -197,7 +197,7 @@
     const note = document.getElementById('sendNote').value.trim();
     if (note) fd.append('note', note);
     try {
-      await UI.api('/me/send', { method: 'POST', body: fd });
+      await UI.api('/me/send', { method: 'POST', body: fd, loadingMessage: t('uploading') });
       UI.toast(t('send_ok'), 'ok');
       pending = []; renderPending();
       document.getElementById('sendNote').value = '';
@@ -210,7 +210,7 @@
 
   async function loadChat(){ try{ const d=await UI.api('/chat/'+me.id,{csrf:false}); chatMessages=d.messages||[]; renderChat(); }catch(e){ UI.errToast(e); } }
   function renderChat(){ const el=document.getElementById('chatList'); if(!el)return; el.innerHTML=chatMessages.length?chatMessages.map(m=>{const sender=m.sender_role==='client'?myName():(window.I18N.lang==='ar'&&m.sender_name_ar?m.sender_name_ar:(m.sender_name||t('office_panel'))); return `<div style="padding:9px 11px;border-radius:10px;background:${m.sender_role==='client'?'var(--line-soft)':'#fff'};border:1px solid var(--line);align-self:${m.sender_role==='client'?'flex-end':'flex-start'};max-width:80%"><b>${esc(sender)}</b><div>${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`;}).join(''):`<div class="muted">${esc(t('no_messages_today'))}</div>`; el.scrollTop=el.scrollHeight; }
-  document.getElementById('chatSend').onclick=async()=>{const input=document.getElementById('chatInput');const message=input.value.trim();if(!message)return;try{await UI.api('/chat/'+me.id,{method:'POST',body:{message}});input.value='';await loadChat();}catch(e){UI.errToast(e);}};
+  document.getElementById('chatSend').onclick=async()=>{const input=document.getElementById('chatInput');const message=input.value.trim();if(!message)return;try{await UI.api('/chat/'+me.id,{method:'POST',body:{message},loadingMessage:t('sending')});input.value='';await loadChat();}catch(e){UI.errToast(e);}};
   document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('chatSend').click();});
 
   init();

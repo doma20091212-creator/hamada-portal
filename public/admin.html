@@ -8,6 +8,23 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="app-body">
+  <div class="page-loader" id="pageLoader" role="status" aria-live="polite" aria-label="Loading">
+    <div class="loader-card">
+      <div class="loader-mark" aria-hidden="true"><span></span></div>
+      <div class="loader-title" data-i18n="loading">Loading</div>
+      <div class="loader-sub" data-i18n="please_wait">Please wait</div>
+    </div>
+  </div>
+  <div class="process-loader" id="processLoader" role="status" aria-live="polite" aria-label="Processing" aria-hidden="true">
+    <div class="process-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div class="process-title" id="processLoaderText">Processing</div>
+        <div class="process-sub" data-i18n="please_wait">Please wait</div>
+      </div>
+    </div>
+  </div>
+
   <aside class="side">
     <div class="side-brand">
       <img src="/assets/logo-white.png" alt="" class="side-logo">
@@ -33,7 +50,7 @@
         <p class="muted" id="pageSub"></p>
       </div>
       <div class="top-actions">
-        <div class="who"><span class="avatar" id="whoAvatar">A</span><span id="whoName">Admin</span></div>
+        <div class="live-status" aria-label="Live status"><span class="live-dot"></span><span data-i18n="live">Live</span></div><div class="who"><span class="avatar" id="whoAvatar">A</span><span id="whoName">Admin</span></div>
         <button class="btn ghost sm" id="pwBtn" data-i18n="change_password">Change password</button>
         <button class="btn ghost sm" id="logoutBtn" data-i18n="logout">Log out</button>
       </div>
@@ -52,7 +69,7 @@
       <section class="tab" id="tab-clients">
         <div class="toolbar">
           <div class="search"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg><input id="clientSearch" class="input plain" data-i18n-ph="search_clients" placeholder="Search clients…" autocomplete="off"></div>
-          <button class="btn primary" id="addClientBtn"><span class="plus">+</span><span data-i18n="new_client">New client</span></button>
+          <div class="toolbar-actions"><button class="btn ghost" id="importClientsBtn"><span class="upload-glyph">↑</span><span data-i18n="import_clients">Import JSON</span></button><button class="btn primary" id="addClientBtn"><span class="plus">+</span><span data-i18n="new_client">New client</span></button><input type="file" id="importClientsFile" accept=".json,application/json" hidden></div>
         </div>
         <div class="card table-card"><table class="tbl" id="clientsTbl"></table><div class="empty" id="clientsEmpty" hidden></div></div>
       </section>

@@ -14,7 +14,44 @@
   const APP = { user: null, csrf: null };
   window.APP = APP;
 
+  /* ---------------------------- global loading UI ---------------------------- */
+  let busyCount = 0;
+  let busyTimer = null;
+  function setBusy(on, message) {
+    const el = document.getElementById('processLoader');
+    const text = document.getElementById('processLoaderText');
+    if (!el) return;
+    if (on) {
+      busyCount++;
+      if (message && text) text.textContent = message;
+      if (busyCount === 1) {
+        clearTimeout(busyTimer);
+        busyTimer = setTimeout(() => { el.classList.add('show'); el.setAttribute('aria-hidden', 'false'); }, 160);
+      }
+    } else {
+      busyCount = Math.max(0, busyCount - 1);
+      if (busyCount === 0) {
+        clearTimeout(busyTimer);
+        el.classList.remove('show');
+        el.setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+  function finishPageLoad() {
+    const el = document.getElementById('pageLoader');
+    if (el) el.classList.add('hide');
+  }
+  window.addEventListener('load', () => setTimeout(finishPageLoad, 120));
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      if (window.I18N && window.I18N.t) el.textContent = window.I18N.t(key);
+    });
+  });
+
   async function api(path, opts = {}) {
+    const showBusy = opts.busy !== false;
+    if (showBusy) setBusy(true, opts.loadingMessage || t('processing'));
     const init = { method: opts.method || 'GET', headers: {}, credentials: 'same-origin' };
     if (opts.csrf !== false) init.headers['x-csrf-token'] = APP.csrf || '';
     if (opts.body !== undefined && !(opts.body instanceof FormData)) {
@@ -26,6 +63,7 @@
     let res;
     try { res = await fetch('/api' + path, init); }
     catch { throw { code: 'net' }; }
+    finally { if (showBusy) setBusy(false); }
     let data = {};
     try { data = await res.json(); } catch { data = {}; }
     if (res.status === 401 && !path.startsWith('/login')) { location.href = '/'; throw { code: data.error || 'auth' }; }
@@ -230,5 +268,5 @@
     } catch {}
   }
 
-  window.UI = { esc, api, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand };
+  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand };
 })();
