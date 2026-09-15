@@ -14,6 +14,9 @@
     folderView: null,      // {client, files, folders}
     folderFilter: '',
     pending: [],
+    selectedClients: new Set(),
+    selectedFiles: new Set(),
+    selectedFolders: new Set(),
     profile: { is_owner: false, permissions: [] },
     admins: [],
     permissionDefs: [],
@@ -183,11 +186,12 @@
     empty.hidden = true;
     tbl.innerHTML = `
       <thead><tr>
-        <th>${esc(t('client'))}</th><th>${esc(t('contact'))}</th><th>${esc(t('files'))}</th>
+        <th class="select-col"><input type="checkbox" id="selectAllClients" aria-label="${esc(t('select_all'))}"></th><th>${esc(t('client'))}</th><th>${esc(t('contact'))}</th><th>${esc(t('files'))}</th>
         <th>${esc(t('size'))}</th><th>${esc(t('last_activity'))}</th><th></th>
       </tr></thead>
       <tbody>${rows.map((c) => `
         <tr data-id="${c.id}">
+          <td class="select-col"><input type="checkbox" class="client-select" data-client-select="${c.id}" ${S.selectedClients.has(c.id)?'checked':''}></td>
           <td>
             <div class="cell-main">${esc(cname(c))} ${c.active ? '' : `<span class="tag red">${esc(t('disabled'))}</span>`}</div>
             ${c.name_ar && cname(c) === c.name ? `<div class="cell-sub">${esc(c.name_ar)}</div>` : ''}
@@ -204,6 +208,10 @@
           </div></td>
         </tr>`).join('')}</tbody>`;
 
+    tbl.querySelectorAll('.client-select').forEach((cb) => cb.onclick = (e) => e.stopPropagation());
+    tbl.querySelectorAll('.client-select').forEach((cb) => cb.onchange = () => { const id=Number(cb.dataset.clientSelect); cb.checked ? S.selectedClients.add(id) : S.selectedClients.delete(id); renderClients(); });
+    const selectAll=document.getElementById('selectAllClients'); if(selectAll){ const visibleIds=rows.map(c=>c.id); selectAll.checked=visibleIds.length>0 && visibleIds.every(id=>S.selectedClients.has(id)); selectAll.indeterminate=visibleIds.some(id=>S.selectedClients.has(id)) && !selectAll.checked; selectAll.onchange=()=>{visibleIds.forEach(id=>selectAll.checked?S.selectedClients.add(id):S.selectedClients.delete(id));renderClients();}; }
+    renderClientSelectionBar();
     tbl.querySelectorAll('tbody [data-act]').forEach((b) => (b.onclick = (e) => {
       e.stopPropagation();
       const id = +b.closest('tr').dataset.id;
@@ -215,6 +223,13 @@
       if (b.dataset.act === 'del') delClient(c);
     }));
     tbl.querySelectorAll('tbody tr').forEach((tr) => (tr.onclick = () => openFolder(+tr.dataset.id)));
+  }
+
+  function renderClientSelectionBar(){
+    const el=document.getElementById('clientsSelectionBar'); if(!el)return; const n=S.selectedClients.size; el.hidden=!n; if(!n)return;
+    el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('manage_clients')?`<button class="btn danger sm" id="bulkClientDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearClientSelection">${esc(t('clear_selection'))}</button></span>`;
+    document.getElementById('clearClientSelection').onclick=()=>{S.selectedClients.clear();renderClients();};
+    const d=document.getElementById('bulkClientDelete');if(d)d.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;let ok=0;for(const id of [...S.selectedClients]){try{await UI.api('/admin/clients/'+id,{method:'DELETE'});ok++;}catch(e){UI.errToast(e);}}S.selectedClients.clear();UI.toast(`${ok} ${t('deleted')}`,'ok');await refreshAll();};
   }
 
   async function chatModal(c){
@@ -321,6 +336,7 @@
         </div>
         <button class="iconbtn" id="fmX">${UI.icon('x')}</button>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><button class="btn ghost sm" id="fmFolderUploadBtn">${UI.icon('folder')} ${esc(t('upload_folder'))}</button><input type="file" id="fmFolderInput" webkitdirectory directory multiple hidden><span class="muted" style="font-size:12px">${esc(t('folder_upload_hint'))}</span></div>
       <div class="dropzone" id="fmDrop" tabindex="0">
         <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3 6.5 8.5 7.9 9.9 11 6.8V16h2V6.8l3.1 3.1 1.4-1.4L12 3ZM5 18v3h14v-3h-2v1H7v-1H5Z"/></svg>
         <p class="dz-big">${esc(t('upload_here'))}</p>
@@ -336,6 +352,7 @@
       ${(has('manage_clients') || has('manage_folders'))?`<button class="btn ghost sm" id="clientFolderAccessBtn" style="margin:0 0 10px 6px">${esc(t('client_folder_visibility'))}</button>`:''}
       <div id="fmChips" style="margin-block:4px 8px"></div>
       <div id="fmBrowser" class="filelist" style="margin-block:8px 10px"></div>
+      <div id="folderSelectionBar" class="selection-bar" hidden></div>
       <table class="tbl" id="fmTbl"></table>
       <div class="empty" id="fmEmpty" hidden><div class="big"><svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></div>${esc(t('no_files_client'))}</div>`;
     const entry = UI.openModal(html, { wide: true });
@@ -345,6 +362,10 @@
       for (const f of UI.clientCheckFiles(fl)) S.pending.push(f);
       renderPending();
     });
+
+    const folderBtn=entry.box.querySelector('#fmFolderUploadBtn'), folderInput=entry.box.querySelector('#fmFolderInput');
+    folderBtn.onclick=()=>folderInput.click();
+    folderInput.onchange=async()=>{const picked=[...(folderInput.files||[])];if(!picked.length)return;const baseParent=document.getElementById('fmFolderId').value||'';let done=0;folderBtn.disabled=true;try{for(const f of picked){const fd=new FormData();fd.append('file',f,f.name);fd.append('relative_path',f.webkitRelativePath||f.name);if(baseParent)fd.append('parent_id',baseParent);await UI.api(`/admin/clients/${client.id}/folder-upload`,{method:'POST',body:fd,loadingMessage:`${t('uploading')} ${done+1}/${picked.length}`});done++;}UI.toast(`${done} ${t('uploaded_n')}`,'ok');const d=await UI.api('/admin/client-folders/'+client.id);S.folderView=d;renderFolderTable();await Promise.all([loadStats(),loadClients()]);renderClients();}catch(e){UI.errToast(e);}finally{folderBtn.disabled=false;folderInput.value='';}};
     function renderPending() {
       const ul = document.getElementById('fmPend');
       ul.innerHTML = S.pending.map((f, i) => `<li><span>${UI.icon('file')}</span><span class="nm">${esc(f.name)}</span><span class="muted">${window.I18N.fmtSize(f.size)}</span><button class="rm" data-i="${i}">✕</button></li>`).join('');
@@ -490,29 +511,36 @@
     chips.querySelectorAll('[data-nav-folder]').forEach(b=>b.onclick=()=>{ S.folderFilter=b.dataset.navFolder; renderFolderTable(); });
 
     const rows = direct.map(f => `
-      <button type="button" class="frow" data-open-admin-folder="${f.id}" style="width:100%;text-align:start;border:0;background:transparent;cursor:pointer;padding:10px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:10px">
-        <span>${UI.icon('folder')}</span><span style="flex:1"><b>${esc(f.name)}</b><div class="f-meta"><span class="tag blue">${esc(t('folder_type'))}</span> · ${Number(f.file_count)||0} ${esc(t('files_count'))}</div></span><span class="btn ghost sm">${UI.icon('eye')}</span>
-      </button>`).join('');
-    browser.innerHTML = rows || '';
+      <div class="frow selectable-row" style="cursor:default">
+        <input type="checkbox" class="folder-select" data-folder-select="${f.id}" ${S.selectedFolders.has(f.id)?'checked':''}>
+        <button type="button" class="frow-open" data-open-admin-folder="${f.id}" style="flex:1;text-align:start;border:0;background:transparent;cursor:pointer;padding:0;display:flex;align-items:center;gap:10px">
+          <span>${UI.icon('folder')}</span><span style="flex:1"><b>${esc(f.name)}</b><div class="f-meta"><span class="tag blue">${esc(t('folder_type'))}</span> · ${Number(f.file_count)||0} ${esc(t('files_count'))}</div></span><span class="btn ghost sm">${UI.icon('eye')}</span>
+        </button><a class="btn ghost sm" href="/api/admin/folders/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
+      </div>`).join('');
+    browser.innerHTML = `${rows ? `<div class="selection-inline"><label><input type="checkbox" id="selectAllFolders"> ${esc(t('select_all'))}</label></div>` : ''}${rows}`;
+    const selectAllFolders=document.getElementById('selectAllFolders'); if(selectAllFolders){const ids=direct.map(f=>f.id);selectAllFolders.checked=ids.length>0&&ids.every(id=>S.selectedFolders.has(id));selectAllFolders.indeterminate=ids.some(id=>S.selectedFolders.has(id))&&!selectAllFolders.checked;selectAllFolders.onchange=()=>{ids.forEach(id=>selectAllFolders.checked?S.selectedFolders.add(id):S.selectedFolders.delete(id));renderFolderTable();};}
+    browser.querySelectorAll('.folder-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.folderSelect);cb.checked?S.selectedFolders.add(id):S.selectedFolders.delete(id);renderFolderTable();});
     browser.querySelectorAll('[data-open-admin-folder]').forEach(b=>b.onclick=()=>{ S.folderFilter=String(b.dataset.openAdminFolder); renderFolderTable(); });
     browser.hidden = !rows;
 
     // Only show files directly inside the current folder. Nested folders are never
     // flattened into the parent or shown beside their parent.
-    document.getElementById('fmTbl').innerHTML = fileTableHTML(directFiles, { showClient: false });
+    document.getElementById('fmTbl').innerHTML = fileTableHTML(directFiles, { showClient: false, selectable: true });
     document.getElementById('fmEmpty').hidden = directFiles.length > 0 || direct.length > 0;
     wireFolderActions();
+    wireFileSelection(document.getElementById('fmTbl')); renderFolderSelectionBar();
   }
 
-  function fileTableHTML(rows, { showClient }) {
+  function fileTableHTML(rows, { showClient, selectable = false }) {
     if (!rows.length) return '';
     return `
       <thead><tr>
-        <th>${esc(t('file'))}</th>${showClient ? `<th>${esc(t('client'))}</th>` : ''}<th>${esc(t('folder'))}</th>
+        <th class="select-col">${selectable?`<input type="checkbox" class="select-all-files" aria-label="${esc(t('select_all'))}">`:``}</th><th>${esc(t('file'))}</th>${showClient ? `<th>${esc(t('client'))}</th>` : ''}<th>${esc(t('folder'))}</th>
         <th>${esc(t('size'))}</th><th>${esc(t('date'))}</th><th></th>
       </tr></thead>
       <tbody>${rows.map((f) => `
         <tr data-id="${f.id}">
+          ${selectable?`<td class="select-col"><input type="checkbox" class="file-select" data-file-select="${f.id}" ${S.selectedFiles.has(f.id)?'checked':''}></td>`:``}
           <td><div class="cell-main" style="display:flex;gap:.5rem;align-items:center;max-width:340px"><span style="color:var(--navy)">${UI.icon('file')}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.name)}">${esc(f.name)}</span></div></td>
           ${showClient ? `<td class="cell-sub">${esc(f.client_name || '')}</td>` : ''}
           <td>${f.folder ? `<span class="tag blue">${esc(f.folder)}</span>` : '<span class="muted">—</span>'}</td>
@@ -526,6 +554,10 @@
           </div></td>
         </tr>`).join('')}</tbody>`;
   }
+
+  function wireFileSelection(tbl){ if(!tbl)return; tbl.querySelectorAll('.file-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.fileSelect);cb.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id);if(S.folderView)renderFolderTable();else renderFiles();}); const all=tbl.querySelector('.select-all-files');if(all){const ids=[...tbl.querySelectorAll('.file-select')].map(x=>Number(x.dataset.fileSelect));all.checked=ids.length>0&&ids.every(id=>S.selectedFiles.has(id));all.indeterminate=ids.some(id=>S.selectedFiles.has(id))&&!all.checked;all.onchange=()=>{ids.forEach(id=>all.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id));if(S.folderView)renderFolderTable();else renderFiles();};}}
+  function renderFileSelectionBar(){const el=document.getElementById('filesSelectionBar');if(!el)return;const n=S.selectedFiles.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFileDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('delete_files')?`<button class="btn danger sm" id="bulkFileDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFileSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFileSelection').onclick=()=>{S.selectedFiles.clear();renderFiles();};const d=document.getElementById('bulkFileDownload');if(d)d.onclick=()=>{location.href='/api/admin/files/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFiles]));};const x=document.getElementById('bulkFileDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFiles]){try{await UI.api('/admin/files/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFiles.clear();await loadAllFiles();};}
+  function renderFolderSelectionBar(){const el=document.getElementById('folderSelectionBar');if(!el)return;const n=S.selectedFolders.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFolderDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('manage_folders')?`<button class="btn danger sm" id="bulkFolderDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFolderSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFolderSelection').onclick=()=>{S.selectedFolders.clear();renderFolderTable();};const d=document.getElementById('bulkFolderDownload');if(d)d.onclick=()=>{location.href='/api/admin/folders/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFolders]));};const x=document.getElementById('bulkFolderDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFolders]){try{await UI.api('/admin/folders/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFolders.clear();await openFolder(S.folderView.client.id);};}
 
   const refreshFolder = () => UI.api('/admin/client-folders/' + S.folderView.client.id).then((d) => { S.folderView = d; renderFolderTable(); Promise.all([loadStats(), loadClients()]).then(renderClients); });
   function wireFolderActions() {
@@ -689,7 +721,8 @@
       return;
     }
     empty.hidden = true;
-    tbl.innerHTML = fileTableHTML(S.files, { showClient: true });
+    tbl.innerHTML = fileTableHTML(S.files, { showClient: true, selectable: true });
+    wireFileSelection(tbl); renderFileSelectionBar();
     tbl.querySelectorAll('[data-act]').forEach((b) => (b.onclick = (e) => {
       e.stopPropagation();
       const id = +b.closest('tr').dataset.id;

@@ -298,3 +298,7 @@ textarea.input{resize:vertical;min-height:64px}
 .btn:disabled{cursor:wait}
 @media(max-width:640px){.loader-card{min-width:170px;padding:24px}.process-card{min-width:0;width:min(90vw,330px)}}
 @media(prefers-reduced-motion:reduce){.loader-mark,.loader-mark span,.spinner{animation:none}.page-loader,.process-loader{transition:none}}
+
+/* Multi-selection controls */
+.selection-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:#fff;box-shadow:0 8px 22px -18px rgba(15,36,64,.35);font-size:13px}.selection-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.select-col{width:42px!important;text-align:center!important}.select-col input,.frow>input[type=checkbox]{width:16px;height:16px;accent-color:var(--navy);cursor:pointer}.selectable-row{border-radius:8px}.frow-open{min-width:0}.frow-open .f-main{min-width:0}@media(max-width:640px){.selection-bar{align-items:flex-start;flex-direction:column}.selection-actions{width:100%}.selection-actions .btn{flex:1}}
+.selection-inline{display:flex;align-items:center;gap:7px;padding:6px 8px;margin:4px 0;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)}.selection-inline label{display:flex;align-items:center;gap:7px;cursor:pointer}.selection-inline input{width:15px;height:15px;accent-color:var(--navy)}

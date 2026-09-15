@@ -7,6 +7,8 @@
   let files = [], sent = [];
   let q = '', folderSel = '';
   let pending = [];
+  const selectedFolders = new Set();
+  const selectedFiles = new Set();
   let chatMessages = [];
   let folders = [];
 
@@ -63,19 +65,23 @@
   function folderRowHtml(f, compact = false) {
     const count = Number(f.file_count) || 0;
     return `
-      <button type="button" class="frow client-folder-row" data-folder-open="${esc(f.id)}" title="${esc(t('open_folder'))}" style="width:100%;text-align:start;border:0;background:transparent;cursor:pointer">
+      <div class="frow client-folder-row" style="width:100%;text-align:start">
+        <input type="checkbox" class="client-folder-select" data-folder-select="${esc(f.id)}" ${selectedFolders.has(Number(f.id))?'checked':''}>
+        <button type="button" class="frow-open" data-folder-open="${esc(f.id)}" title="${esc(t('open_folder'))}" style="flex:1;text-align:start;border:0;background:transparent;cursor:pointer;display:flex;align-items:center;gap:12px;padding:0">
         <div class="f-ico">${UI.icon('folder')}</div>
         <div class="f-main">
           <div class="f-name" title="${esc(f.name)}">${esc(f.name)}</div>
           <div class="f-meta"><span class="tag blue">${esc(t('folder_type'))}</span> · ${count} ${esc(t('files_count'))}</div>
         </div>
         <span class="btn ghost sm">${UI.icon('eye')}<span>${esc(t('open_folder'))}</span></span>
-      </button>`;
+        </button><a class="btn ghost sm" href="/api/folder/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
+      </div>`;
   }
 
   function fileRowHtml(f) {
     return `
       <div class="frow" data-id="${f.id}">
+        <input type="checkbox" class="client-file-select" data-file-select="${f.id}" ${selectedFiles.has(Number(f.id))?'checked':''}>
         <div class="f-ico">${UI.icon('file')}</div>
         <div class="f-main">
           <div class="f-name" title="${esc(f.name)}">${esc(f.name)}</div>
@@ -86,9 +92,16 @@
   }
 
   function wireFolderRows(root = document) {
-    root.querySelectorAll('[data-folder-open]').forEach((b) => {
-      b.onclick = () => openClientFolderModal(Number(b.dataset.folderOpen));
-    });
+    root.querySelectorAll('[data-folder-open]').forEach((b) => { b.onclick = () => openClientFolderModal(Number(b.dataset.folderOpen)); });
+    root.querySelectorAll('.client-folder-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.folderSelect);cb.checked?selectedFolders.add(id):selectedFolders.delete(id);render();});
+    root.querySelectorAll('.client-file-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.fileSelect);cb.checked?selectedFiles.add(id):selectedFiles.delete(id);render();});
+  }
+
+  function renderClientSelectionBar(){
+    const el=document.getElementById('clientSelectionBar'); if(!el)return; const n=selectedFolders.size+selectedFiles.size; el.hidden=!n; if(!n)return;
+    el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions"><button class="btn ghost sm" id="clientBulkDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button><button class="btn ghost sm" id="clientClearSelection">${esc(t('clear_selection'))}</button></span>`;
+    document.getElementById('clientClearSelection').onclick=()=>{selectedFolders.clear();selectedFiles.clear();render();};
+    document.getElementById('clientBulkDownload').onclick=()=>{location.href='/api/client/download-selected?folder_ids='+encodeURIComponent(JSON.stringify([...selectedFolders]))+'&file_ids='+encodeURIComponent(JSON.stringify([...selectedFiles]));};
   }
 
   function openClientFolderModal(folderId) {
@@ -137,6 +150,7 @@
 
     const folderRows = visibleFolders.map((f) => folderRowHtml(f)).join('');
     const fileRows = shown.map(fileRowHtml).join('');
+    const selectAllBox=document.getElementById('selectAllClientItems'); if(selectAllBox){const ids=[...visibleFolders.map(f=>['f',f.id]),...shown.map(f=>['x',f.id])];selectAllBox.checked=ids.length>0&&ids.every(([k,id])=>(k==='f'?selectedFolders:selectedFiles).has(Number(id)));selectAllBox.indeterminate=ids.some(([k,id])=>(k==='f'?selectedFolders:selectedFiles).has(Number(id)))&&!selectAllBox.checked;selectAllBox.onchange=()=>{ids.forEach(([k,id])=>(selectAllBox.checked?(k==='f'?selectedFolders:selectedFiles).add(Number(id)):(k==='f'?selectedFolders:selectedFiles).delete(Number(id))));render();};}
     if (!folderRows && !fileRows) {
       box.innerHTML = '';
       empty.hidden = false;
@@ -146,6 +160,7 @@
     empty.hidden = true;
     box.innerHTML = folderRows + fileRows;
     wireFolderRows(box);
+    renderClientSelectionBar();
   }
 
   function renderSent() {

@@ -10,7 +10,7 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 
 const { db, initDb } = require('./lib/db');
-const { uploadFile, createFolder, renameFolder, moveFile, moveFolder, deleteFile, downloadFile } = require('./lib/drive');
+const { uploadFile, createFolder, renameFolder, moveFile, moveFolder, deleteFile, downloadFile, downloadFileBuffer } = require('./lib/drive');
 const { PERMISSIONS, isOwner, hasPermission, hasClientAccess, can, getAdminProfile } = require('./lib/access');
 const { getAuthUrl, getTokens } = require('./lib/google-oauth');
 const U = require('./lib/util');
@@ -72,6 +72,17 @@ function withUpload(req, res, next) {
   });
 }
 
+function withUploadSingle(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.message === 'bad_type') return res.status(400).json({ error: 'file_type_not_allowed' });
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'file_too_large', limit_mb: MAX_FILE_MB });
+      return res.status(400).json({ error: 'upload_failed' });
+    }
+    next();
+  });
+}
+
 async function saveFiles({ client_id, sender_id, inbox, folder, note, files, driveParentId, folderId }) {
   const rows = [];
   for (const f of files) {
@@ -94,6 +105,93 @@ async function deleteFileRow(id) {
   await db.run(`DELETE FROM files WHERE id=$1`, [id]);
   await deleteFile(f.stored);
   return true;
+}
+
+async function ensureFolderPath(clientId, parentId, folderPath) {
+  let currentParentId = parentId || null;
+  let driveParentId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (currentParentId) {
+    const p = await db.get(`SELECT drive_id FROM folders WHERE id=$1 AND client_id=$2`, [currentParentId, clientId]);
+    if (!p) throw Object.assign(new Error('invalid_parent'), { code: 'invalid_parent' });
+    driveParentId = p.drive_id;
+  }
+  const parts = String(folderPath || '').split(/[\/]+/).map(x => U.sanitizeName(x, 120)).filter(Boolean);
+  for (const name of parts) {
+    let row = await db.get(`SELECT id,drive_id FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND name=$3 LIMIT 1`, [clientId, currentParentId, name]);
+    if (!row) {
+      const drive = await createFolder(name, driveParentId);
+      try {
+        const r = await db.run(`INSERT INTO folders(client_id,parent_id,name,sort_order,drive_id) VALUES($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2),$4) RETURNING id,drive_id`, [clientId, currentParentId, name, drive.id]);
+        row = r.rows[0];
+      } catch (e) {
+        try { await deleteFile(drive.id); } catch (_) {}
+        if (e.code !== '23505') throw e;
+        row = await db.get(`SELECT id,drive_id FROM folders WHERE client_id=$1 AND parent_id IS NOT DISTINCT FROM $2 AND name=$3 LIMIT 1`, [clientId, currentParentId, name]);
+      }
+    }
+    currentParentId = row.id;
+    driveParentId = row.drive_id;
+  }
+  return { folderId: currentParentId, driveId: driveParentId };
+}
+
+function crc32(buf) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zipDosTime(date = new Date()) {
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = (date.getDate() & 31) | ((date.getMonth() + 1) << 5) | (date.getFullYear() - 1980 << 9);
+  return { time, day };
+}
+
+async function getFolderZipEntries(folderId, clientId) {
+  const folders=await db.all(`WITH RECURSIVE tree AS (SELECT id,parent_id,name FROM folders WHERE id=$1 AND client_id=$2 UNION ALL SELECT f.id,f.parent_id,f.name FROM folders f JOIN tree t ON f.parent_id=t.id WHERE f.client_id=$2) SELECT id,parent_id,name FROM tree`,[folderId,clientId]);
+  if(!folders.length)return null;
+  const names=new Map(folders.map(f=>[f.id,f.name])); const parents=new Map(folders.map(f=>[f.id,f.parent_id]));
+  const root=folders.find(f=>f.id===folderId); const rel=(fid)=>{const a=[];let cur=fid;while(cur&&cur!==folderId){a.unshift(names.get(cur));cur=parents.get(cur);}return a.length?a.join('/')+'/':'';};
+  const rows=await db.all(`WITH RECURSIVE tree AS (SELECT id FROM folders WHERE id=$1 AND client_id=$2 UNION ALL SELECT f.id FROM folders f JOIN tree t ON f.parent_id=t.id WHERE f.client_id=$2) SELECT fi.id,fi.name,fi.stored,fi.created_at,fi.folder_id FROM files fi JOIN tree t ON t.id=fi.folder_id WHERE fi.client_id=$2 ORDER BY fi.created_at,fi.id`,[folderId,clientId]);
+  const folderEntries=folders.filter(f=>f.id!==folderId).map(f=>({directory:true,name:f.name,path:rel(f.id)})).filter(x=>x.path);
+  return { root, entries: [...folderEntries, ...rows.map(f=>({...f,path:rel(f.folder_id)+f.name}))] };
+}
+
+async function sendZip(res, entries, archiveName) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(archiveName || 'folder')}.zip"`);
+  const central = [];
+  let offset = 0;
+  const write = (b) => { res.write(b); offset += b.length; };
+  for (const entry of entries) {
+    const data = entry.directory ? Buffer.alloc(0) : await downloadFileBuffer(entry.stored);
+    const compressed = entry.directory ? Buffer.alloc(0) : require('zlib').deflateRawSync(data, { level: 6 });
+    const crc = crc32(data);
+    const name = Buffer.from(String(entry.path || entry.name || 'file'), 'utf8');
+    const { time, day } = zipDosTime(entry.created_at ? new Date(entry.created_at) : new Date());
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(entry.directory ? 0 : 8, 8); local.writeUInt16LE(time, 10); local.writeUInt16LE(day, 12);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(compressed.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26); local.writeUInt16LE(0, 28); name.copy(local, 30);
+    write(local); write(compressed);
+    const c = Buffer.alloc(46 + name.length);
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0800, 8);
+    c.writeUInt16LE(entry.directory ? 0 : 8, 10); c.writeUInt16LE(time, 12); c.writeUInt16LE(day, 14); c.writeUInt32LE(crc, 16);
+    c.writeUInt32LE(compressed.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(name.length, 28); c.writeUInt16LE(0, 30);
+    c.writeUInt16LE(0, 32); c.writeUInt16LE(0, 34); c.writeUInt32LE(0, 36); c.writeUInt32LE(offset - compressed.length - local.length, 42); name.copy(c, 46);
+    central.push(c);
+  }
+  const centralOffset = offset;
+  for (const c of central) write(c);
+  const centralSize = offset - centralOffset;
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(0, 4); end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(centralSize, 12); end.writeUInt32LE(centralOffset, 16); end.writeUInt16LE(0, 20);
+  write(end); res.end();
 }
 
 /* --------------------------------- app setup -------------------------------- */
@@ -847,6 +945,62 @@ app.put('/api/admin/clients/:id/folder-visibility', requireAdmin, async (req,res
 });
 
 /* -------------------------------- folders ----------------------------------- */
+
+app.post('/api/admin/clients/:id/folder-upload', requireAdmin, withUploadSingle, async (req,res)=>{
+  const cid=parseInt(req.params.id,10);
+  if(!(await requirePermission(req,res,'upload_files',cid)))return res.status(403).json({error:'permission_denied'});
+  if(!req.file)return res.status(400).json({error:'no_file'});
+  const baseParent=req.body?.parent_id?parseInt(req.body.parent_id,10):null;
+  const relative=String(req.body?.relative_path||req.file.originalname||'').replaceAll('\\','/').replace(/^\/+|\/+$/g,'');
+  const parts=relative.split('/').filter(Boolean);
+  const fileName=U.sanitizeFilename(U.latinFix(parts.pop()||req.file.originalname));
+  const folderPath=parts.join('/');
+  const target=await ensureFolderPath(cid,baseParent,folderPath);
+  const uploaded=await uploadFile({...req.file,originalname:fileName},target.driveId);
+  const r=await db.run(`INSERT INTO files (client_id,sender_id,inbox,name,stored,size,mime,folder,folder_id,note,is_read) VALUES($1,$2,0,$3,$4,$5,$6,$7,$8,'',0) RETURNING id`,[cid,req.user.id,fileName,uploaded.stored,req.file.size||0,req.file.mimetype||'',folderPath ? parts[parts.length-1] || '' : '',target.folderId||null]);
+  await audit(req,'folder_file_uploaded','client',cid,{file_id:r.rows[0].id,relative_path:relative});
+  res.json({ok:true,file_id:r.rows[0].id,relative_path:relative});
+});
+
+app.get('/api/admin/folders/:id/download', requireAdmin, async (req,res)=>{
+  const id=parseInt(req.params.id,10); const folder=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]);
+  if(!folder)return res.status(404).json({error:'not_found'});
+  if(!(await requirePermission(req,res,'view_files',folder.client_id)))return res.status(403).json({error:'permission_denied'});
+  const data=await getFolderZipEntries(id,folder.client_id); if(!data)return res.status(404).json({error:'not_found'});
+  if(!data.entries.length)return res.status(400).json({error:'folder_empty'});
+  await sendZip(res,data.entries,folder.name);
+});
+
+app.get('/api/admin/folders/download-selected', requireAdmin, async (req,res)=>{
+  let ids=[]; try{ids=JSON.parse(String(req.query.ids||'[]'));}catch(_){return res.status(400).json({error:'invalid_ids'});}
+  ids=[...new Set((Array.isArray(ids)?ids:[]).map(Number).filter(Number.isInteger))].slice(0,50); if(!ids.length)return res.status(400).json({error:'invalid_ids'});
+  const all=[]; for(const id of ids){const f=await db.get(`SELECT id,client_id,name FROM folders WHERE id=$1`,[id]); if(!f)continue; if(!(await requirePermission(req,res,'view_files',f.client_id)))return res.status(403).json({error:'permission_denied'}); const data=await getFolderZipEntries(id,f.client_id); if(data)all.push(...data.entries.map(x=>({...x,path:`${f.name}/${x.path}`})));}
+  if(!all.length)return res.status(400).json({error:'folder_empty'}); await sendZip(res,all,'selected-folders');
+});
+
+
+app.get('/api/client/download-selected', requireAuth, async (req,res)=>{
+  if(req.user.role!=='client')return res.status(403).json({error:'not_allowed'});
+  let folderIds=[],fileIds=[]; try{folderIds=JSON.parse(String(req.query.folder_ids||'[]'));fileIds=JSON.parse(String(req.query.file_ids||'[]'));}catch(_){return res.status(400).json({error:'invalid_ids'});}
+  folderIds=[...new Set((Array.isArray(folderIds)?folderIds:[]).map(Number).filter(Number.isInteger))].slice(0,50); fileIds=[...new Set((Array.isArray(fileIds)?fileIds:[]).map(Number).filter(Number.isInteger))].slice(0,100);
+  const entries=[]; for(const id of folderIds){const data=await getFolderZipEntries(id,req.user.id);if(data)entries.push(...data.entries.map(x=>({...x,path:`${data.root.name}/${x.path}`})));}
+  if(fileIds.length){const rows=await db.all(`SELECT id,name,stored,created_at FROM files WHERE client_id=$1 AND inbox=0 AND id=ANY($2::int[])`,[req.user.id,fileIds]);entries.push(...rows.map(f=>({...f,path:f.name})));}
+  if(!entries.length)return res.status(404).json({error:'not_found'}); await sendZip(res,entries,'selected-items');
+});
+
+app.get('/api/folder/:id/download', requireAuth, async (req,res)=>{
+  const id=parseInt(req.params.id,10); const folder=await db.get(`SELECT * FROM folders WHERE id=$1`,[id]); if(!folder)return res.status(404).json({error:'not_found'});
+  if(req.user.role==='admin'){if(!(await can(db,req.user,'view_files',folder.client_id)))return res.status(403).json({error:'not_allowed'});} else if(folder.client_id!==req.user.id || !(await can(db,req.user,'view_files',folder.client_id))) return res.status(403).json({error:'not_allowed'});
+  const data=await getFolderZipEntries(id,folder.client_id); if(!data)return res.status(404).json({error:'not_found'}); if(!data.entries.length)return res.status(400).json({error:'folder_empty'}); await sendZip(res,data.entries,folder.name);
+});
+
+app.get('/api/admin/files/download-selected', requireAdmin, async (req,res)=>{
+  let ids=[]; try{ids=JSON.parse(String(req.query.ids||'[]'));}catch(_){return res.status(400).json({error:'invalid_ids'});}
+  ids=[...new Set((Array.isArray(ids)?ids:[]).map(Number).filter(Number.isInteger))].slice(0,100); if(!ids.length)return res.status(400).json({error:'invalid_ids'});
+  const rows=[]; for(const id of ids){const f=await db.get(`SELECT id,client_id,name,stored,created_at FROM files WHERE id=$1`,[id]); if(!f)continue; if(!(await requirePermission(req,res,'view_files',f.client_id)))return res.status(403).json({error:'permission_denied'}); rows.push({...f,path:f.name});}
+  if(!rows.length)return res.status(404).json({error:'not_found'}); await sendZip(res,rows,'selected-files');
+});
+
 app.get('/api/admin/clients/:id/folders', requireAdmin, async (req,res)=>{
   const cid=parseInt(req.params.id,10); if(!(await requirePermission(req,res,'view_files',cid)))return res.status(403).json({error:'permission_denied'});
   const folders=await db.all(`WITH RECURSIVE folder_tree AS (
