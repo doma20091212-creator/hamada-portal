@@ -3,6 +3,7 @@
   const DICT = {
     en: {
       office_panel: 'Office panel',
+      office_panel_tagline: 'Accounting, Auditing and Taxation',
       signin: 'Sign in',
       signin_eyebrow: 'Client access',
       auth_side_quote: 'Precision, confidentiality, and a dedicated partner for your books.',
@@ -263,6 +264,7 @@
     },
     ar: {
       office_panel: 'لوحة المكتب',
+      office_panel_tagline: 'للمحاسبة والمراجعة والضرائب',
       signin: 'تسجيل الدخول',
       signin_eyebrow: 'دخول العملاء',
       auth_side_quote: 'الدقة والسرّية، وشريك مخصص لحساباتكم.',
