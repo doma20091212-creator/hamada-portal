@@ -3,6 +3,8 @@
   const t = window.__t;
   const { esc } = window.UI;
   document.getElementById('langBtn').onclick = () => window.I18N.toggle();
+  window.__onLangChange = () => window.UI.loadBrand();
+  window.UI.loadBrand();
 
   async function showChange(password) {
     document.getElementById('loginCard').hidden = true;
