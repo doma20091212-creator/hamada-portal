@@ -106,7 +106,7 @@
         const key = items.length + ':' + el.textContent.length;
         if (key === lastKey) return;
         lastKey = key;
-        animate(items, { opacity: [0, 1], y: [8, 0] }, { delay: stagger(0.035), duration: 0.32, easing: EASE_OUT });
+        animate(items, { opacity: [0, 1], y: [6, 0] }, { delay: stagger(0.015), duration: 0.16, easing: EASE_OUT });
       });
       mo.observe(el, { childList: true, subtree: true });
     });
@@ -123,11 +123,41 @@
     });
   }
 
+  /* ---------------- mobile: hamburger-triggered sidebar drawer ---------------- */
+  function initMobileDrawer() {
+    const side = document.getElementById('side');
+    const btn = document.getElementById('mobileMenuBtn');
+    const backdrop = document.getElementById('sideBackdrop');
+    const closeBtn = document.getElementById('sideClose');
+    if (!side || !btn || !backdrop) return;
+
+    const isRtl = () => document.documentElement.dir === 'rtl';
+
+    function open() {
+      side.classList.add('open');
+      backdrop.classList.add('show');
+      if (!reduceMotion) animate(side, { x: [isRtl() ? '100%' : '-100%', '0%'] }, { duration: 0.22, easing: EASE_OUT });
+    }
+    function close() {
+      backdrop.classList.remove('show');
+      if (!side.classList.contains('open')) return;
+      if (reduceMotion) { side.classList.remove('open'); return; }
+      const anim = animate(side, { x: ['0%', isRtl() ? '100%' : '-100%'] }, { duration: 0.22, easing: [0.4, 0, 1, 1] });
+      (anim.finished || Promise.resolve()).then(() => { side.classList.remove('open'); side.style.transform = ''; }).catch(() => {});
+    }
+    btn.addEventListener('click', open);
+    backdrop.addEventListener('click', close);
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    side.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', close));
+    window.addEventListener('resize', () => { if (window.innerWidth > 880) close(); });
+  }
+
   ready(() => {
     initAuth();
     initPress();
     initNavPill();
     initListReveal();
     initEmptyReveal();
+    initMobileDrawer();
   });
 })();

@@ -29,11 +29,14 @@
     </div>
   </div>
 
-  <aside class="side">
+  <div class="side-backdrop" id="sideBackdrop"></div>
+
+  <aside class="side" id="side">
     <div class="side-brand">
       <img src="/assets/logo-white.png" alt="" class="side-logo">
       <div class="side-name" id="sideName">Hamada Ahmed Ali</div>
       <div class="side-sub" data-i18n="office_panel">Office panel</div>
+      <button class="side-close" id="sideClose" aria-label="Close menu" type="button">&times;</button>
     </div>
     <nav class="side-nav">
       <button class="navlink active" data-tab="clients"><span class="ni"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></span><span data-i18n="clients">Clients</span></button>
@@ -49,6 +52,9 @@
 
   <div class="main">
     <header class="topbar">
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z"/></svg>
+      </button>
       <div class="top-title">
         <h1 id="pageTitle" data-i18n="clients">Clients</h1>
         <p class="muted" id="pageSub"></p>

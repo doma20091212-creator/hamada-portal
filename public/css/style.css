@@ -13,6 +13,12 @@
 }
 [dir="rtl"]{ --font-heading: 'Cairo', var(--font); }
 *{box-sizing:border-box}
+/* Many components below set their own `display` (flex/grid/etc.) at the same
+   specificity as the browser's default `[hidden]{display:none}` rule, so
+   without this, source order lets the component's display win and an
+   element with the `hidden` attribute set stays visually on screen — e.g.
+   the selection-bar staying stuck open after it's cleared. */
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{font-family:var(--font);color:var(--ink);background:var(--paper);font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased}
 h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
@@ -249,18 +255,22 @@ textarea.input{resize:vertical;min-height:64px}
 @media (max-width:1020px){
   .cli-grid{grid-template-columns:1fr}
 }
+.mobile-menu-btn{display:none}
+.side-close{display:none}
+.side-backdrop{display:none}
 @media (max-width:880px){
   .app-body{grid-template-columns:1fr}
-  .side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 14px}
-  .side-brand{border:none;padding:0;margin:0;display:flex;align-items:center;gap:10px;text-align:start}
-  .side-logo{height:36px;margin:0}
-  .side-name{font-size:13px}
-  .side-sub{display:none}
-  .side-nav{flex-direction:row;flex-wrap:wrap;flex:1 1 auto;min-width:0}
-  .navlink{width:auto;padding:.45rem .7rem}
-  .side-foot{margin:0;border:none;padding:0;margin-inline-start:auto}
+  .mobile-menu-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;flex:0 0 auto;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--navy-ink);cursor:pointer}
+  .side-backdrop{display:block;position:fixed;inset:0;background:rgba(8,17,35,.5);z-index:199;opacity:0;visibility:hidden;transition:opacity .25s ease,visibility .25s ease}
+  .side-backdrop.show{opacity:1;visibility:visible}
+  .side{position:fixed;inset-block:0;inset-inline-start:0;height:100vh;width:280px;max-width:82vw;z-index:200;transform:translateX(-100%);box-shadow:0 0 40px rgba(0,0,0,.35)}
+  [dir=rtl] .side{inset-inline-start:auto;inset-inline-end:0;transform:translateX(100%)}
+  .side.open{transform:translateX(0)}
+  .side-brand{position:relative}
+  .side-close{display:flex;align-items:center;justify-content:center;position:absolute;top:0;inset-inline-end:0;width:30px;height:30px;border-radius:50%;border:none;background:rgba(255,255,255,.1);color:#fff;font-size:20px;line-height:1;cursor:pointer}
   .content{padding:16px 14px 50px}
   .topbar{padding:12px 14px;flex-wrap:wrap}
+  .top-title{flex:1;min-width:0}
   .grid2{grid-template-columns:1fr}
   .cli-top{padding:10px 14px}
   .cli-main{padding:16px 14px 50px}
