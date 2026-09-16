@@ -87,6 +87,7 @@
           <div class="f-name" title="${esc(f.name)}">${esc(f.name)}</div>
           <div class="f-meta">${window.I18N.fmtSize(f.size)} · ${esc(window.I18N.fmtDate(f.created_at))}${f.folder ? `<span class="tag blue">${esc(f.folder)}</span>` : ''}</div>
         </div>
+        ${UI.isPreviewable(f.mime) ? `<button type="button" class="btn ghost sm" data-preview="${f.id}">${UI.icon('eye')}<span>${esc(t('preview'))}</span></button>` : ''}
         <a class="btn ghost sm" href="/api/file/${f.id}/download" download>${UI.icon('download')}<span>${esc(t('download'))}</span></a>
       </div>`;
   }
@@ -95,6 +96,7 @@
     root.querySelectorAll('[data-folder-open]').forEach((b) => { b.onclick = () => openClientFolderModal(Number(b.dataset.folderOpen)); });
     root.querySelectorAll('.client-folder-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.folderSelect);cb.checked?selectedFolders.add(id):selectedFolders.delete(id);render();});
     root.querySelectorAll('.client-file-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.fileSelect);cb.checked?selectedFiles.add(id):selectedFiles.delete(id);render();});
+    root.querySelectorAll('[data-preview]').forEach((b) => { b.onclick = () => { const f = files.find((x) => Number(x.id) === Number(b.dataset.preview)); if (f) UI.previewFile(f); }; });
   }
 
   function renderClientSelectionBar(){

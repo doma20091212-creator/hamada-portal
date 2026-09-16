@@ -253,8 +253,34 @@
     x: SVG('m12 10.6 5.3-5.3 1.4 1.4-5.3 5.3 5.3 5.3-1.4 1.4-5.3-5.3-5.3 5.3-1.4-1.4 5.3-5.3-5.3-5.3 1.4-1.4 5.3 5.3Z'),
     upload: SVG('M12 3 6.5 8.5 7.9 9.9 11 6.8V16h2V6.8l3.1 3.1 1.4-1.4L12 3ZM5 18v3h14v-3h-2v1H7v-1H5Z'),
     file: SVG('M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5ZM7 12h10v1.6H7V12Zm0 3.4h10V17H7v-1.6Z'),
+    eye: SVG('M12 5C6.8 5 2.5 8.3 1 12c1.5 3.7 5.8 7 11 7s9.5-3.3 11-7c-1.5-3.7-5.8-7-11-7Zm0 11.5A4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 0 1 0 9Zm0-7.2a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4Z'),
   };
   function icon(name) { return ICONS[name] || ICONS.file; }
+
+  /* ------------------------------- file preview ------------------------------- */
+  // Keep in sync with PREVIEWABLE_MIMES in server.js.
+  const PREVIEWABLE_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'application/pdf']);
+  function isPreviewable(mime) { return PREVIEWABLE_MIMES.has(String(mime || '').toLowerCase()); }
+
+  function previewFile(file) {
+    const previewUrl = `/api/file/${file.id}/download?disposition=inline`;
+    const downloadUrl = `/api/file/${file.id}/download`;
+    const isPdf = String(file.mime || '').toLowerCase() === 'application/pdf';
+    const body = isPdf
+      ? `<iframe src="${previewUrl}" style="width:100%;height:75vh;border:0;border-radius:10px;background:#fff" title="${esc(file.name)}"></iframe>`
+      : `<div style="text-align:center"><img src="${previewUrl}" alt="${esc(file.name)}" style="max-width:100%;max-height:75vh;border-radius:10px"></div>`;
+    const entry = openModal(`
+      <div class="modal-head">
+        <div><h2 style="word-break:break-word">${esc(file.name)}</h2></div>
+        <div style="display:flex;gap:6px;flex:none">
+          <a class="iconbtn" href="${downloadUrl}" download title="${esc(t('download'))}">${icon('download')}</a>
+          <button class="iconbtn" id="previewCloseX" title="${esc(t('close'))}">${icon('x')}</button>
+        </div>
+      </div>
+      ${body}
+    `, { wide: true });
+    entry.box.querySelector('#previewCloseX').onclick = () => closeModal();
+  }
 
   /* ------------------------------- dropzone ----------------------------------- */
   function wireDropzone(zoneEl, inputEl, onFiles) {
@@ -314,5 +340,5 @@
     } catch {}
   }
 
-  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand, searchMatch };
+  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand, searchMatch, isPreviewable, previewFile };
 })();

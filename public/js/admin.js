@@ -33,23 +33,6 @@
 
     document.querySelectorAll('.navlink').forEach((b) => (b.onclick = () => setTab(b.dataset.tab)));
     document.getElementById('addClientBtn').onclick = () => clientFormModal(null);
-    const importBtn = document.getElementById('importClientsBtn');
-    const importFile = document.getElementById('importClientsFile');
-    if (importBtn && importFile) {
-      importBtn.onclick = () => importFile.click();
-      importFile.onchange = async (e) => {
-        const file = e.target.files?.[0]; if (!file) return;
-        try {
-          const parsed = JSON.parse(await file.text());
-          const clients = Array.isArray(parsed) ? parsed : parsed?.clients;
-          if (!Array.isArray(clients)) throw { code: 'invalid_import_format' };
-          if (!clients.length) throw { code: 'import_no_clients' };
-          if (clients.length > 1000) throw { code: 'import_too_large' };
-          importClientsModal(clients, file.name);
-        } catch (err) { UI.toast(t(err?.code || 'invalid_import_format'), 'err'); }
-        finally { importFile.value = ''; }
-      };
-    }
     const addAdmin = document.getElementById('addAdminBtn'); if (addAdmin) addAdmin.onclick = () => adminFormModal(null);
     const saveSettings = document.getElementById('saveSettingsBtn'); if (saveSettings) saveSettings.onclick = saveSettingsForm;
     const addGroup = document.getElementById('addGroupBtn'); if (addGroup) addGroup.onclick = () => groupFormModal(null);
@@ -109,7 +92,6 @@
       const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings') && !S.profile.permissions.includes('manage_groups');
       const canManageClients = owner || S.profile.permissions.includes('manage_clients');
     const addClient = document.getElementById('addClientBtn'); if (addClient) addClient.hidden = !canManageClients;
-    const importClients = document.getElementById('importClientsBtn'); if (importClients) importClients.hidden = !canManageClients;
     } catch (e) { UI.errToast(e); }
   }
 
@@ -177,22 +159,6 @@
   }
 
   /* -------------------------------- clients ----------------------------------- */
-  function importClientsModal(clients, fileName) {
-    const preview = clients.slice(0, 8).map((c, i) => `<tr><td>${i + 1}</td><td><b>${esc(c?.name || '—')}</b>${c?.name_ar ? `<div class="cell-sub">${esc(c.name_ar)}</div>` : ''}</td><td>${esc(c?.email || '—')}</td><td>${esc(c?.phone || '—')}</td></tr>`).join('');
-    UI.openModal(`<div class="modal-head"><div><h2>${esc(t('import_clients_title'))}</h2><p class="sub">${esc(fileName)} · ${clients.length} ${esc(t('clients').toLowerCase())}</p></div></div><div class="import-summary"><div><b>${clients.length}</b><span>${esc(t('import_ready'))}</span></div><div><span>${esc(t('import_clients_hint'))}</span></div></div><div class="import-preview"><table class="tbl"><thead><tr><th>#</th><th>${esc(t('client'))}</th><th>${esc(t('email'))}</th><th>${esc(t('phone'))}</th></tr></thead><tbody>${preview}</tbody></table>${clients.length > 8 ? `<div class="import-more">+ ${clients.length - 8} more</div>` : ''}</div><div class="form-error" id="importErr" hidden></div><div class="modal-foot"><button class="btn ghost" id="importCancel">${esc(t('cancel'))}</button><button class="btn primary" id="importRun">${esc(t('import_now'))}</button></div>`, { wide: true });
-    const run=document.getElementById('importRun'), err=document.getElementById('importErr');
-    document.getElementById('importCancel').onclick=()=>UI.closeModal();
-    run.onclick=async()=>{run.disabled=true;run.textContent=t('importing');err.hidden=true;try{const result=await UI.api('/admin/clients/import',{method:'POST',body:{clients}});UI.closeModal();const c=result.counts||{};UI.toast(`${c.created||0} ${t('import_created')} · ${c.skipped||0} ${t('import_skipped')} · ${c.invalid||0} ${t('import_invalid')}`,c.created?'ok':'');await refreshAll();if((c.skipped||0)+(c.invalid||0))importResultsModal(result);}catch(e){run.disabled=false;run.textContent=t('import_now');err.textContent=t('err_'+(e.code||'server_error'));err.hidden=false;}};
-  }
-
-  function importResultsModal(result) {
-    const skipped=result.skipped||[], invalid=result.invalid||[];
-    const reason=x=>x.reason==='email_exists'?t('import_email_exists'):x.reason==='phone_exists'?t('import_phone_exists'):x.reason==='duplicate_in_file'?t('import_duplicate_file'):(x.reasons||[]).map(r=>t('err_'+r)).join(', ');
-    const rows=[...skipped,...invalid].slice(0,80).map(x=>`<tr><td>${x.row}</td><td>${esc(x.name||'—')}</td><td>${esc(x.email||'—')}</td><td>${esc(reason(x))}</td></tr>`).join('');
-    UI.openModal(`<h2>${esc(t('import_clients_title'))}</h2><p class="sub">${esc(t('import_skipped'))}: ${skipped.length} · ${esc(t('import_invalid'))}: ${invalid.length}</p><div class="import-preview"><table class="tbl"><thead><tr><th>#</th><th>${esc(t('client'))}</th><th>${esc(t('email'))}</th><th>${esc(t('status'))}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="modal-foot"><button class="btn primary" id="importResultClose">${esc(t('close'))}</button></div>`,{wide:true});
-    document.getElementById('importResultClose').onclick=()=>UI.closeModal();
-  }
-
   async function loadClients() {
     try { S.clients = (await UI.api('/admin/clients')).clients || []; }
     catch (e) { UI.errToast(e); }
@@ -681,6 +647,7 @@
           <td class="cell-sub">${esc(window.I18N.fmtSize(f.size))}</td>
           <td class="cell-sub">${esc(window.I18N.fmtDate(f.created_at))}</td>
           <td><div class="row-actions">
+            ${has('view_files') && UI.isPreviewable(f.mime) ? `<button class="iconbtn" data-act="preview" title="${esc(t('preview'))}">${UI.icon('eye')}</button>` : ''}
             <a class="iconbtn" href="/api/file/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
             ${has('view_files') ? `<button class="iconbtn ${f.has_unread_note ? 'note-unread' : ''}" data-act="note" title="${esc(f.has_unread_note ? t('unread_note') : t('note_button'))}">📝</button>` : ''}${has('rename_files') ? `<button class="iconbtn" data-act="rn" title="${esc(t('rename'))}">${UI.icon('pencil')}</button>` : ''}
             ${has('manage_folders') ? `<button class="iconbtn" data-act="mv" title="${esc(t('move'))}">${UI.icon('move')}</button>` : ''}
@@ -701,6 +668,7 @@
       const id = +b.closest('tr').dataset.id;
       const f = S.folderView.files.find((x) => x.id === id);
       if (!f) return;
+      if (b.dataset.act === 'preview') UI.previewFile(f);
       if (b.dataset.act === 'note') noteModal(f, refreshFolder);
       if (b.dataset.act === 'rn') renameModal(f, refreshFolder);
       if (b.dataset.act === 'mv') moveModal(f, refreshFolder);
@@ -808,6 +776,7 @@
           ${f.note ? `<div class="inbox-note">${esc(f.note)}</div>` : ''}
         </div>
         <div class="inbox-actions">
+          ${UI.isPreviewable(f.mime) ? `<button class="iconbtn" data-act="preview" title="${esc(t('preview'))}">${UI.icon('eye')}</button>` : ''}
           <a class="iconbtn" href="/api/file/${f.id}/download" download title="${esc(t('download'))}">${UI.icon('download')}</a>
           <button class="iconbtn ${f.has_unread_note ? 'note-unread' : ''}" data-act="note" title="${esc(f.has_unread_note ? t('unread_note') : t('note_button'))}">📝</button>
           <button class="btn sm primary" data-act="save">${esc(t('save_to_folder'))}</button>
@@ -819,6 +788,7 @@
       const id = +b.closest('.inbox-item').dataset.id;
       const f = S.inbox.find((x) => x.id === id);
       if (!f) return;
+      if (b.dataset.act === 'preview') UI.previewFile(f);
       if (b.dataset.act === 'note') noteModal(f, renderInbox);
       if (b.dataset.act === 'save') moveModal({ ...f, folder: '' }, () => { renderInbox(); loadClients(); loadStats(); });
       if (b.dataset.act === 'del') {
@@ -863,6 +833,8 @@
       const f = S.files.find((x) => x.id === id);
       if (!f) return;
       const after = () => { loadAllFiles(); Promise.all([loadStats(), loadClients()]).then(() => renderClients()); if (S.folderView) refreshFolder(); };
+      if (b.dataset.act === 'preview') UI.previewFile(f);
+      if (b.dataset.act === 'note') noteModal(f, after);
       if (b.dataset.act === 'rn') renameModal(f, after);
       if (b.dataset.act === 'mv') moveModal(f, after);
       if (b.dataset.act === 'del') delFile(f, after);
