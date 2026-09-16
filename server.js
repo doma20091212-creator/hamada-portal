@@ -1165,6 +1165,10 @@ app.get('/api/file/:id/download', async (req, res) => {
 
   const wantsInline = req.query.disposition === 'inline' && PREVIEWABLE_MIMES.has(String(f.mime || '').toLowerCase());
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // The site-wide X-Frame-Options:DENY (set above for every response) also blocks
+  // our own preview <iframe> from loading a PDF here. Relax it to same-origin only,
+  // and only for an actual inline preview response — plain downloads keep the default.
+  if (wantsInline) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   await downloadFile(f.stored, res, f.name, f.mime, wantsInline ? 'inline' : 'attachment');
 });
 
