@@ -82,9 +82,52 @@
     window.addEventListener('resize', () => place(nav.querySelector('.navlink.active'), false));
   }
 
+  /* ---------------- lists/tables: stagger reveal when content actually changes ---------------- */
+  function initListReveal() {
+    if (reduceMotion) return;
+    const targets = [
+      { sel: '#clientsTbl', rows: 'tbody tr' },
+      { sel: '#allFilesTbl', rows: 'tbody tr' },
+      { sel: '#adminsTbl', rows: 'tbody tr' },
+      { sel: '#inboxList', rows: '.inbox-item' },
+      { sel: '#myFiles', rows: '.frow' },
+      { sel: '#sentList', rows: 'li' },
+    ];
+    targets.forEach(({ sel, rows }) => {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      // Fingerprint on row count + textContent length: stable across e.g. a checkbox
+      // toggle (which only flips a `checked` attribute, not text), so we only replay
+      // the reveal when the actual visible content changes.
+      let lastKey = '';
+      const mo = new MutationObserver(() => {
+        const items = el.querySelectorAll(rows);
+        if (!items.length) return;
+        const key = items.length + ':' + el.textContent.length;
+        if (key === lastKey) return;
+        lastKey = key;
+        animate(items, { opacity: [0, 1], y: [8, 0] }, { delay: stagger(0.035), duration: 0.32, easing: EASE_OUT });
+      });
+      mo.observe(el, { childList: true, subtree: true });
+    });
+  }
+
+  /* ---------------- empty states: fade in when unhidden ---------------- */
+  function initEmptyReveal() {
+    if (reduceMotion) return;
+    document.querySelectorAll('.empty').forEach((el) => {
+      const mo = new MutationObserver(() => {
+        if (!el.hidden) animate(el, { opacity: [0, 1], y: [6, 0] }, { duration: 0.3, easing: EASE_OUT });
+      });
+      mo.observe(el, { attributes: true, attributeFilter: ['hidden'] });
+    });
+  }
+
   ready(() => {
     initAuth();
     initPress();
     initNavPill();
+    initListReveal();
+    initEmptyReveal();
   });
 })();

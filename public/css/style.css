@@ -154,9 +154,10 @@ textarea.input{resize:vertical;min-height:64px}
 .cell-sub{font-size:12px;color:var(--muted)}
 .row-actions{display:flex;gap:2px;justify-content:flex-end}
 
-.empty{text-align:center;color:var(--muted);padding:42px 20px;font-size:14px}
-.empty .big{font-size:34px;margin-block-end:8px;opacity:.55}
-.empty .big svg, .ni svg, .fchip svg{vertical-align:middle}
+.empty{text-align:center;color:var(--muted);padding:56px 20px;font-size:14px}
+.empty .big{width:64px;height:64px;margin:0 auto 16px;border-radius:50%;background:var(--line-soft);color:var(--navy);display:flex;align-items:center;justify-content:center}
+.empty .big svg{width:28px;height:28px}
+.ni svg, .fchip svg{vertical-align:middle}
 .navlink .ni svg{filter:drop-shadow(0 0 0 transparent)}
 
 .stack{display:flex;flex-direction:column;gap:12px}

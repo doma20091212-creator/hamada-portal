@@ -2,6 +2,8 @@
 (function () {
   const t = (k, v) => window.I18N.t(k, v);
   window.__t = t;
+  const Motion = window.Motion;
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------------- HTML escaping (filenames/names are user input) ---------- */
   function esc(s) {
@@ -92,14 +94,25 @@
     stack.push(entry);
     const first = box.querySelector('input:not([type=hidden]),textarea,select,button.btn.primary');
     if (first) setTimeout(() => first.focus(), 50);
+    if (Motion && !reduceMotion) {
+      box.style.animation = 'none';
+      Motion.animate(wrap, { opacity: [0, 1] }, { duration: 0.18, easing: 'ease-out' });
+      Motion.animate(box, { opacity: [0, 1], y: [10, 0], scale: [0.97, 1] }, { type: 'spring', stiffness: 420, damping: 34 });
+    }
     return entry;
   }
   function closeModal() {
     const e = stack.pop();
     if (!e) return;
     e.detach && e.detach();
-    e.wrap.remove();
-    if (e.onClose) e.onClose();
+    const finish = () => { e.wrap.remove(); if (e.onClose) e.onClose(); };
+    if (Motion && !reduceMotion) {
+      Motion.animate(e.box, { opacity: [1, 0], y: [0, 8], scale: [1, 0.97] }, { duration: 0.16, easing: [0.4, 0, 1, 1] });
+      const backdrop = Motion.animate(e.wrap, { opacity: [1, 0] }, { duration: 0.16, easing: 'ease-in' });
+      (backdrop.finished || Promise.resolve()).then(finish).catch(finish);
+    } else {
+      finish();
+    }
   }
 
   function confirmBox(msg, danger = true) {
@@ -126,7 +139,18 @@
     el.className = 'toast ' + (kind || '');
     el.textContent = msg;
     wrap.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, 3600);
+    if (Motion && !reduceMotion) {
+      el.style.animation = 'none';
+      Motion.animate(el, { opacity: [0, 1], y: [14, 0], scale: [0.95, 1] }, { type: 'spring', stiffness: 480, damping: 30 });
+    }
+    setTimeout(() => {
+      if (Motion && !reduceMotion) {
+        const a = Motion.animate(el, { opacity: [1, 0], y: [0, -8] }, { duration: 0.25, easing: 'ease-in' });
+        (a.finished || Promise.resolve()).then(() => el.remove()).catch(() => el.remove());
+      } else {
+        el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320);
+      }
+    }, 3600);
   }
   function errToast(e) { toast(t('err_' + (e && e.code ? e.code : 'server_error')), 'err'); }
 
