@@ -5,6 +5,16 @@
   const Motion = window.Motion;
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  /* ---------------- animated scrollbar: dance while actively scrolling ------- */
+  if (!reduceMotion) {
+    let scrollDanceTimer;
+    document.addEventListener('scroll', () => {
+      document.documentElement.classList.add('is-scrolling');
+      clearTimeout(scrollDanceTimer);
+      scrollDanceTimer = setTimeout(() => document.documentElement.classList.remove('is-scrolling'), 650);
+    }, { capture: true, passive: true });
+  }
+
   /* ---------------- HTML escaping (filenames/names are user input) ---------- */
   function esc(s) {
     return String(s ?? '')

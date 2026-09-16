@@ -302,9 +302,26 @@ html[lang="en"] .side-sub{font-size:14.5px;font-weight:500;text-transform:none;l
   .row-actions{justify-content:flex-start}
   .inbox-item{flex-wrap:wrap}
 }
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:#C7D2E2;border-radius:99px;border:2px solid var(--paper)}
-::-webkit-scrollbar-thumb:hover{background:#A9BAD3}
+/* ---- Animated brand scrollbar: navy/gold gradient that shifts as you scroll ---- */
+html{scrollbar-width:thin;scrollbar-color:var(--gold-soft) var(--paper)}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{
+  border-radius:99px;border:3px solid var(--paper);background-clip:padding-box;
+  background-image:linear-gradient(180deg,var(--navy) 0%,var(--gold-soft) 50%,var(--navy) 100%);
+  background-size:100% 300%;background-position:0% 0%;
+  transition:background-position .5s ease,border-width .18s ease;
+}
+::-webkit-scrollbar-thumb:hover{border-width:2px;background-position:0% 100%}
+html.is-scrolling ::-webkit-scrollbar-thumb{animation:scrollbar-dance 1.1s ease-in-out infinite}
+@keyframes scrollbar-dance{
+  0%,100%{background-position:0% 0%}
+  50%{background-position:0% 100%}
+}
+@media (prefers-reduced-motion:reduce){
+  ::-webkit-scrollbar-thumb{transition:none}
+  html.is-scrolling ::-webkit-scrollbar-thumb{animation:none}
+}
 
 
 /* File notes and numeric counts */
