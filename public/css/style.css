@@ -135,6 +135,7 @@ textarea.input{resize:vertical;min-height:64px}
 .content{padding:22px 26px 60px;max-width:1280px;width:100%}
 
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-block-end:18px}
+.stats-row>*{min-width:0}
 .stat{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 18px;box-shadow:var(--shadow)}
 .stat-k{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .stat-v{font-size:24px;font-weight:800;color:var(--navy-ink);margin-top:2px;font-variant-numeric:tabular-nums}
@@ -182,6 +183,7 @@ textarea.input{resize:vertical;min-height:64px}
 .info-block{background:#F2F7F3;border:1px solid #D8E8DA;color:#2C5E3F;border-radius:10px;padding:.7rem .9rem;font-size:13.5px;margin-block-end:12px}
 .info-block b{font-family:ui-monospace,Consolas,monospace;font-size:14px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid2>*{min-width:0}
 @keyframes pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}
 
 /* ---------- dropzone ---------- */
@@ -213,6 +215,7 @@ textarea.input{resize:vertical;min-height:64px}
 .chipbox b{display:block;font-size:19px;color:#fff;font-variant-numeric:tabular-nums}
 .chipbox span{font-size:11px;color:#B9CBE8;text-transform:uppercase;letter-spacing:.07em;font-weight:700}
 .cli-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:18px;align-items:start}
+.cli-grid>*{min-width:0}
 .sec{padding:20px 22px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-block-end:12px;flex-wrap:wrap}
 .sec-head h2{font-size:16px;color:var(--navy-ink)}
@@ -253,8 +256,8 @@ textarea.input{resize:vertical;min-height:64px}
   .side-logo{height:36px;margin:0}
   .side-name{font-size:13px}
   .side-sub{display:none}
-  .side-nav{flex-direction:row}
-  .navlink{padding:.45rem .7rem}
+  .side-nav{flex-direction:row;flex-wrap:wrap;flex:1 1 auto;min-width:0}
+  .navlink{width:auto;padding:.45rem .7rem}
   .side-foot{margin:0;border:none;padding:0;margin-inline-start:auto}
   .content{padding:16px 14px 50px}
   .topbar{padding:12px 14px;flex-wrap:wrap}
@@ -314,6 +317,19 @@ textarea.input{resize:vertical;min-height:64px}
 .import-preview{border:1px solid var(--line);border-radius:11px;overflow:auto;max-height:340px;background:#fff}.import-preview .tbl th{position:sticky;top:0;z-index:1}.import-more{text-align:center;padding:9px;color:var(--muted);font-size:12px;border-top:1px solid var(--line-soft)}
 @media(max-width:640px){.live-status{display:none}.import-summary{flex-direction:column}.toolbar-actions{width:100%}.toolbar-actions .btn{flex:1}.import-preview{max-height:300px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* ---------- touch targets: comfortable tap size on phones/tablets ---------- */
+@media (pointer:coarse){
+  .btn:not(.sm){min-height:44px}
+  .input{min-height:46px}
+  .navlink{min-height:44px}
+}
+
+/* ---------- narrow phones: give the file/folder name room to breathe ---------- */
+@media (max-width:480px){
+  .frow .btn.sm span{display:none}
+  .f-meta .tag{display:none}
+}
 
 
 /* ---------- loading states: calm, premium, functional ---------- */
