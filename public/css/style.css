@@ -191,6 +191,18 @@ html[lang="en"] .side-sub{font-size:14.5px;font-weight:500;text-transform:none;l
 .info-block b{font-family:ui-monospace,Consolas,monospace;font-size:14px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
 .grid2>*{min-width:0}
+.modal h3{font-size:12.5px;font-weight:700;color:var(--navy-ink);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px}
+.perm-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.perm-card{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;font-size:13.5px;color:var(--ink);cursor:pointer;transition:border-color .13s,background .13s}
+.perm-card:hover{border-color:var(--navy)}
+.perm-card.checked{border-color:var(--navy);background:#EEF3FA}
+.perm-card input{accent-color:var(--navy);flex:none}
+.perm-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-block-start:20px;margin-block-end:10px}
+.perm-section-head h3{margin:0}
+.client-check-list{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px}
+.client-check{display:flex;gap:8px;padding:7px 2px;border-radius:6px}
+.client-check:hover{background:var(--line-soft)}
+@media(max-width:640px){.perm-grid{grid-template-columns:1fr}}
 @keyframes pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}
 
 /* ---------- dropzone ---------- */

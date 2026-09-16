@@ -112,12 +112,11 @@
     try { const d=await UI.api('/admin/admins'); S.admins=d.admins||[]; S.permissionDefs=d.permissions||[]; } catch(e){UI.errToast(e);}
   }
 
-  function fmtExpiry(x){return x?window.I18N.fmtDate(x):t('permanent_access_hint').split('.')[0];}
   function renderAdmins(){
     const tbl=document.getElementById('adminsTbl'), empty=document.getElementById('adminsEmpty'); if(!tbl)return;
     if(!S.admins.length){tbl.innerHTML='';empty.hidden=false;empty.textContent=t('no_admins');return;} empty.hidden=true;
     tbl.innerHTML=`<thead><tr><th>${esc(t('name'))}</th><th>${esc(t('contact'))}</th><th>${esc(t('status'))}</th><th>${esc(t('permissions'))}</th><th>${esc(t('clients_access'))}</th><th></th></tr></thead><tbody>${S.admins.map(a=>{
-      const ps=a.is_owner?[t('owner_everything')]:a.permissions.map(p=>`${p.permission_key}${p.expires_at?' · '+fmtExpiry(p.expires_at):''}`);
+      const ps=a.is_owner?[t('owner_everything')]:a.permissions.map(p=>t(p.permission_key));
       return `<tr data-id="${a.id}"><td><div class="cell-main">${esc(a.name)} ${a.is_owner?`<span class="tag gold">${esc(t('owner_everything'))}</span>`:''}</div><div class="cell-sub">${esc(a.name_ar||'')}</div></td><td>${esc(a.email)}<div class="cell-sub">${esc(a.phone)}</div></td><td>${a.active?`<span class="tag green">${esc(t('active_status'))}</span>`:`<span class="tag red">${esc(t('disabled_status'))}</span>`}</td><td>${ps.map(x=>`<span class="tag blue" style="margin:2px">${esc(x)}</span>`).join('')}</td><td>${a.is_owner?esc(t('all')):a.client_access.length}</td><td><div class="row-actions">${a.is_owner?'':`<button class="btn ghost sm" data-act="perm">${esc(t('permissions'))}</button><button class="iconbtn" data-act="edit">${UI.icon('pencil')}</button><button class="iconbtn danger" data-act="del">${UI.icon('trash')}</button>`}</div></td></tr>`;}).join('')}</tbody>`;
     tbl.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{const a=S.admins.find(x=>x.id===+b.closest('tr').dataset.id);if(!a)return;if(b.dataset.act==='perm')permissionModal(a);if(b.dataset.act==='edit')adminFormModal(a);if(b.dataset.act==='del')deleteAdmin(a);});
   }
@@ -127,12 +126,24 @@
     document.getElementById('afCancel').onclick=()=>UI.closeModal(); document.getElementById('afSave').onclick=async()=>{const body={name:afName.value.trim(),name_ar:afAr.value.trim(),email:afEmail.value.trim(),phone:afPhone.value.trim()};const pw=afPw.value.trim();if(pw)body.password=pw;if(edit)body.active=afActive.checked?1:0;try{const r=await UI.api(edit?'/admin/admins/'+a.id:'/admin/admins',{method:edit?'PUT':'POST',body});UI.closeModal();UI.toast(edit?t('saved'):`${t('admin_created')}${r.initial_password}`,'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}};
   }
 
-  function toIsoOrNull(id){const v=document.getElementById(id)?.value;return v?new Date(v).toISOString():null;}
   function permissionModal(a){
-    const rows=S.permissionDefs.map(p=>{p.label=t(p.key);const cur=a.permissions.find(x=>x.permission_key===p.key);const ex=cur&&cur.expires_at?new Date(cur.expires_at):null;const val=ex&&!Number.isNaN(ex.getTime())?new Date(ex.getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';return `<div style="display:grid;grid-template-columns:1fr 220px;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:9px 0"><label class="check"><input type="checkbox" data-perm="${esc(p.key)}" ${cur?'checked':''}> ${esc(p.label)}</label><input class="input" type="datetime-local" data-exp="${esc(p.key)}" value="${val}" placeholder="${esc(t('permanent_access_hint'))}"></div>`;}).join('');
-    const clients=S.clients.map(c=>{const x=a.client_access.find(y=>y.client_id===c.id);return `<label class="check" style="display:flex;gap:8px;margin:5px 0"><input type="checkbox" data-client="${c.id}" ${x?'checked':''}> ${esc(cname(c))}</label>`;}).join('');
-    UI.openModal(`<h2>Permissions — ${esc(a.name)}</h2><p class="muted">${esc(t('permanent_access_hint'))}</p><h3>${esc(t('what_admin_do'))}</h3><div>${rows}</div><h3 style="margin-top:18px">${esc(t('which_clients'))}</h3><div style="max-height:220px;overflow:auto">${clients||`<span class="muted">${esc(t('no_clients'))}</span>`}</div><label class="field" style="margin-top:12px"><span>${esc(t('client_access_expires'))}</span><input class="input" id="accessExp" type="datetime-local"></label><div class="modal-foot"><button class="btn ghost" id="pmCancel">${esc(t('cancel'))}</button><button class="btn primary" id="pmSave">${esc(t('save_permissions'))}</button></div>`,{wide:true});
-    document.getElementById('pmCancel').onclick=()=>UI.closeModal(); document.getElementById('pmSave').onclick=async()=>{const permissions=[...document.querySelectorAll('[data-perm]:checked')].map(x=>({permission_key:x.dataset.perm,expires_at:document.querySelector(`[data-exp="${x.dataset.perm}"]`)?.value?new Date(document.querySelector(`[data-exp="${x.dataset.perm}"]`).value).toISOString():null}));const accessExp=toIsoOrNull('accessExp');const clients=[...document.querySelectorAll('[data-client]:checked')].map(x=>({client_id:+x.dataset.client,expires_at:accessExp}));try{await UI.api('/admin/admins/'+a.id+'/permissions',{method:'PUT',body:{permissions}});await UI.api('/admin/admins/'+a.id+'/client-access',{method:'PUT',body:{clients}});UI.closeModal();UI.toast(t('permissions_saved'),'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}};
+    const rows=S.permissionDefs.map(p=>{p.label=t(p.key);const cur=a.permissions.find(x=>x.permission_key===p.key);return `<label class="perm-card ${cur?'checked':''}"><input type="checkbox" data-perm="${esc(p.key)}" ${cur?'checked':''}><span>${esc(p.label)}</span></label>`;}).join('');
+    const allChecked=S.clients.length>0 && S.clients.every(c=>a.client_access.some(y=>y.client_id===c.id));
+    const clients=S.clients.map(c=>{const x=a.client_access.find(y=>y.client_id===c.id);return `<label class="check client-check"><input type="checkbox" data-client="${c.id}" ${x?'checked':''}> ${esc(cname(c))}</label>`;}).join('');
+    UI.openModal(`<h2>${esc(t('permissions'))} — ${esc(a.name)}</h2><p class="sub">${esc(t('what_admin_do'))}</p><div class="perm-grid">${rows}</div><div class="perm-section-head"><h3>${esc(t('which_clients'))}</h3>${S.clients.length?`<label class="check"><input type="checkbox" id="pmSelectAllClients" ${allChecked?'checked':''}> ${esc(t('select_all'))}</label>`:''}</div><div class="client-check-list">${clients||`<span class="muted">${esc(t('no_clients'))}</span>`}</div><div class="modal-foot"><button class="btn ghost" id="pmCancel">${esc(t('cancel'))}</button><button class="btn primary" id="pmSave">${esc(t('save_permissions'))}</button></div>`,{wide:true});
+    document.getElementById('pmCancel').onclick=()=>UI.closeModal();
+    document.querySelectorAll('.perm-card input[type=checkbox]').forEach(cb=>cb.onchange=()=>cb.closest('.perm-card').classList.toggle('checked',cb.checked));
+    const selectAll=document.getElementById('pmSelectAllClients');
+    if(selectAll)selectAll.onchange=()=>document.querySelectorAll('[data-client]').forEach(cb=>cb.checked=selectAll.checked);
+    document.getElementById('pmSave').onclick=async()=>{
+      const permissions=[...document.querySelectorAll('[data-perm]:checked')].map(x=>({permission_key:x.dataset.perm}));
+      const clients=[...document.querySelectorAll('[data-client]:checked')].map(x=>({client_id:+x.dataset.client}));
+      try{
+        await UI.api('/admin/admins/'+a.id+'/permissions',{method:'PUT',body:{permissions}});
+        await UI.api('/admin/admins/'+a.id+'/client-access',{method:'PUT',body:{clients}});
+        UI.closeModal();UI.toast(t('permissions_saved'),'ok');loadAdmins().then(renderAdmins);
+      }catch(e){UI.errToast(e);}
+    };
   }
 
   async function deleteAdmin(a){if(!(await UI.confirmBox(`${t('delete_admin_confirm')} (${a.name})`)))return;try{await UI.api('/admin/admins/'+a.id,{method:'DELETE'});UI.toast(t('admin_deleted'),'ok');loadAdmins().then(renderAdmins);}catch(e){UI.errToast(e);}}
