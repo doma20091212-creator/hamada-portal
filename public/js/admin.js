@@ -20,6 +20,8 @@
     profile: { is_owner: false, permissions: [] },
     admins: [],
     permissionDefs: [],
+    groups: [],
+    clientGroupFilter: '', // '' = all, 'base' = ungrouped, else numeric group id (string)
   };
 
   async function init() {
@@ -49,6 +51,7 @@
     }
     const addAdmin = document.getElementById('addAdminBtn'); if (addAdmin) addAdmin.onclick = () => adminFormModal(null);
     const saveSettings = document.getElementById('saveSettingsBtn'); if (saveSettings) saveSettings.onclick = saveSettingsForm;
+    const addGroup = document.getElementById('addGroupBtn'); if (addGroup) addGroup.onclick = () => groupFormModal(null);
     const discardAll = document.getElementById('discardAllBtn'); if (discardAll) { discardAll.hidden = !has('delete_files'); discardAll.onclick = discardAllInbox; }
     await loadProfile();
 
@@ -61,8 +64,14 @@
   }
 
   async function refreshAll() {
-    await Promise.all([loadStats(), loadClients()]);
+    await Promise.all([loadStats(), loadClients(), loadGroups()]);
     render();
+  }
+
+  async function loadGroups() {
+    if (!has('settings')) { S.groups = []; return; }
+    try { S.groups = (await UI.api('/admin/client-groups')).groups || []; }
+    catch (e) { S.groups = []; }
   }
 
   function setTab(tab) {
@@ -80,7 +89,7 @@
     if (S.tab === 'inbox') renderInbox();
     if (S.tab === 'files') loadAllFiles();
     if (S.tab === 'admins') { loadAdmins().then(renderAdmins); }
-    if (S.tab === 'settings') { loadSettings(); loadAudit(); }
+    if (S.tab === 'settings') { loadSettings(); loadAudit(); loadGroups().then(renderGroups); }
   }
 
 
@@ -172,9 +181,23 @@
 
   const cname = (c) => (window.I18N.lang === 'ar' && c.name_ar) ? c.name_ar : c.name;
 
+  function renderClientGroupChips() {
+    const wrap = document.getElementById('clientGroupChips');
+    if (!wrap) return;
+    if (!has('settings') || !S.groups.length) { wrap.innerHTML = ''; return; }
+    const chip = (key, label, count) => `<button class="fchip ${S.clientGroupFilter === key ? 'active' : ''}" data-group-filter="${key}">${esc(label)}${count !== undefined ? ` <span class="muted folder-count">${count}</span>` : ''}</button>`;
+    wrap.innerHTML = chip('', t('all'), S.clients.length)
+      + chip('base', t('client_group_base'), S.clients.filter((c) => !c.group_id).length)
+      + S.groups.map((g) => chip(String(g.id), g.name, S.clients.filter((c) => c.group_id === g.id).length)).join('');
+    wrap.querySelectorAll('[data-group-filter]').forEach((b) => (b.onclick = () => { S.clientGroupFilter = b.dataset.groupFilter; renderClients(); }));
+  }
+
   function renderClients() {
+    renderClientGroupChips();
     const q = S.clientQ.trim().toLowerCase();
-    const rows = S.clients.filter((c) => !q || [c.name, c.name_ar, c.email, c.phone].join(' ').toLowerCase().includes(q));
+    const rows = S.clients
+      .filter((c) => !q || [c.name, c.name_ar, c.email, c.phone].join(' ').toLowerCase().includes(q))
+      .filter((c) => S.clientGroupFilter === '' || (S.clientGroupFilter === 'base' ? !c.group_id : c.group_id === Number(S.clientGroupFilter)));
     const tbl = document.getElementById('clientsTbl');
     const empty = document.getElementById('clientsEmpty');
     if (!rows.length) {
@@ -193,7 +216,7 @@
         <tr data-id="${c.id}">
           <td class="select-col"><input type="checkbox" class="client-select" data-client-select="${c.id}" ${S.selectedClients.has(c.id)?'checked':''}></td>
           <td>
-            <div class="cell-main">${esc(cname(c))} ${c.active ? '' : `<span class="tag red">${esc(t('disabled'))}</span>`}</div>
+            <div class="cell-main">${esc(cname(c))} ${c.active ? '' : `<span class="tag red">${esc(t('disabled'))}</span>`} ${c.group_name ? `<span class="tag gold">${esc(c.group_name)}</span>` : ''}</div>
             ${c.name_ar && cname(c) === c.name ? `<div class="cell-sub">${esc(c.name_ar)}</div>` : ''}
           </td>
           <td><div>${esc(c.email)}</div><div class="cell-sub">${esc(c.phone)}</div></td>
@@ -300,6 +323,86 @@
           else UI.toast(t('saved'), 'ok');
         }
         await refreshAll();
+      } catch (e) {
+        err.textContent = t('err_' + (e.code || 'server_error'));
+        err.hidden = false;
+      }
+    };
+  }
+
+  function renderGroups() {
+    const tbl = document.getElementById('groupsTbl');
+    const empty = document.getElementById('groupsEmpty');
+    if (!tbl) return;
+    if (!S.groups.length) {
+      tbl.innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML = `<div class="big">${UI.icon('folder')}</div>${esc(t('no_groups'))}`;
+      return;
+    }
+    empty.hidden = true;
+    tbl.innerHTML = `
+      <thead><tr><th>${esc(t('group_name'))}</th><th>${esc(t('clients'))}</th><th></th></tr></thead>
+      <tbody>${S.groups.map((g) => `
+        <tr data-id="${g.id}">
+          <td class="cell-main">${esc(g.name)}</td>
+          <td>${g.client_count}</td>
+          <td><div class="row-actions">
+            <button class="iconbtn" data-act="edit" title="${esc(t('edit'))}">${UI.icon('pencil')}</button>
+            <button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>
+          </div></td>
+        </tr>`).join('')}</tbody>`;
+    tbl.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => {
+      const id = +b.closest('tr').dataset.id;
+      const g = S.groups.find((x) => x.id === id);
+      if (b.dataset.act === 'edit') groupFormModal(g);
+      if (b.dataset.act === 'del') delGroup(g);
+    }));
+  }
+
+  async function delGroup(g) {
+    if (!(await UI.confirmBox(`${t('delete_group_confirm')} "${g.name}"`))) return;
+    try {
+      await UI.api('/admin/client-groups/' + g.id, { method: 'DELETE' });
+      UI.toast(t('group_deleted'), 'ok');
+      await refreshAll();
+      if (S.tab === 'settings') renderGroups();
+    } catch (e) { UI.errToast(e); }
+  }
+
+  function groupFormModal(g) {
+    const isEdit = !!g;
+    const memberIds = new Set(isEdit ? g.client_ids : []);
+    const list = S.clients.map((c) => `
+      <label style="display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line-soft)">
+        <input type="checkbox" class="group-client-check" data-client="${c.id}" ${memberIds.has(c.id) ? 'checked' : ''}>
+        <span style="flex:1">${esc(cname(c))}</span>
+        ${c.group_name && (!isEdit || c.group_id !== g.id) ? `<span class="tag gold">${esc(c.group_name)}</span>` : ''}
+      </label>`).join('') || `<div class="muted" style="padding:12px">${esc(t('no_clients'))}</div>`;
+    UI.openModal(`
+      <h2>${esc(isEdit ? t('edit_group') : t('new_group'))}</h2>
+      <label class="field"><span>${esc(t('group_name'))}</span><input class="input" id="gName" maxlength="120" value="${isEdit ? esc(g.name) : ''}" required></label>
+      <p class="muted" style="margin-block-end:6px">${esc(t('select_clients_hint'))}</p>
+      <div id="groupClientList" style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px">${list}</div>
+      <div class="form-error" id="gErr" hidden></div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="gCancel">${esc(t('cancel'))}</button>
+        <button class="btn primary" id="gSave">${esc(isEdit ? t('save') : t('create'))}</button>
+      </div>`, { wide: true });
+    const err = document.getElementById('gErr');
+    document.getElementById('gCancel').onclick = () => UI.closeModal();
+    document.getElementById('gSave').onclick = async () => {
+      err.hidden = true;
+      const name = document.getElementById('gName').value.trim();
+      if (!name) { err.textContent = t('err_invalid_name'); err.hidden = false; return; }
+      const client_ids = [...document.querySelectorAll('.group-client-check:checked')].map((x) => +x.dataset.client);
+      try {
+        if (isEdit) await UI.api('/admin/client-groups/' + g.id, { method: 'PUT', body: { name, client_ids } });
+        else await UI.api('/admin/client-groups', { method: 'POST', body: { name, client_ids } });
+        UI.closeModal();
+        UI.toast(t(isEdit ? 'group_updated' : 'group_created'), 'ok');
+        await refreshAll();
+        if (S.tab === 'settings') renderGroups();
       } catch (e) {
         err.textContent = t('err_' + (e.code || 'server_error'));
         err.hidden = false;
