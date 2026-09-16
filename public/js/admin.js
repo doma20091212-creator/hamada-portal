@@ -13,6 +13,7 @@
     fileClient: '',
     folderView: null,      // {client, files, folders}
     folderFilter: '',
+    folderQ: '',
     pending: [],
     selectedClients: new Set(),
     selectedFiles: new Set(),
@@ -212,9 +213,8 @@
 
   function renderClients() {
     renderClientGroupChips();
-    const q = S.clientQ.trim().toLowerCase();
     const rows = S.clients
-      .filter((c) => !q || [c.name, c.name_ar, c.email, c.phone].join(' ').toLowerCase().includes(q))
+      .filter((c) => UI.searchMatch([c.name, c.name_ar, c.email, c.phone, c.group_name], S.clientQ))
       .filter((c) => S.clientGroupFilter === '' || (S.clientGroupFilter === 'base' ? !c.group_id : c.group_id === Number(S.clientGroupFilter)));
     const tbl = document.getElementById('clientsTbl');
     const empty = document.getElementById('clientsEmpty');
@@ -440,7 +440,7 @@
   async function openFolder(id) {
     try {
       S.folderView = await UI.api('/admin/client-folders/' + id);
-      S.folderFilter = ''; S.pending = [];
+      S.folderFilter = ''; S.folderQ = ''; S.pending = [];
       const entry = renderFolderModal();
       if (entry) entry.onClose = () => { S.folderView = null; S.pending = []; };
     }
@@ -471,6 +471,7 @@
       </div>
       ${has('manage_folders')?`<button class="btn ghost sm" id="manageFoldersBtn" style="margin-bottom:10px">${esc(t('folders'))}</button>`:''}
       ${(has('manage_clients') || has('manage_folders'))?`<button class="btn ghost sm" id="clientFolderAccessBtn" style="margin:0 0 10px 6px">${esc(t('client_folder_visibility'))}</button>`:''}
+      <div class="search" style="margin-bottom:10px"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg><input id="fmSearch" class="input plain" data-i18n-ph="search_client_files" placeholder="${esc(t('search_client_files'))}" autocomplete="off" value="${esc(S.folderQ)}"></div>
       <div id="fmChips" style="margin-block:4px 8px"></div>
       <div id="fmBrowser" class="filelist" style="margin-block:8px 10px"></div>
       <div id="folderSelectionBar" class="selection-bar" hidden></div>
@@ -478,6 +479,13 @@
       <div class="empty" id="fmEmpty" hidden><div class="big"><svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4v10h18V9H3Z"/></svg></div>${esc(t('no_files_client'))}</div>`;
     const entry = UI.openModal(html, { wide: true });
     entry.box.querySelector('#fmX').onclick = () => UI.closeModal();
+
+    let fmSearchDebounce;
+    entry.box.querySelector('#fmSearch').addEventListener('input', (e) => {
+      S.folderQ = e.target.value;
+      clearTimeout(fmSearchDebounce);
+      fmSearchDebounce = setTimeout(renderFolderTable, 180);
+    });
 
     UI.wireDropzone(entry.box.querySelector('#fmDrop'), entry.box.querySelector('#fmInput'), (fl) => {
       for (const f of UI.clientCheckFiles(fl)) S.pending.push(f);
@@ -615,8 +623,13 @@
       .filter(f => (f.parent_id == null ? null : Number(f.parent_id)) === (pid == null ? null : Number(pid)))
       .sort((a,b) => (Number(a.sort_order)||0)-(Number(b.sort_order)||0) || String(a.name).localeCompare(String(b.name)));
     const current = currentId ? byId.get(currentId) : null;
-    const direct = children(currentId);
-    const directFiles = files.filter(f => (f.folder_id == null ? null : Number(f.folder_id)) === (currentId == null ? null : currentId))
+    // While searching, look across every folder for this client (not just the
+    // one open) so a keyword finds the file no matter where it's filed.
+    const searching = String(S.folderQ || '').trim().length > 0;
+    const direct = searching ? [] : children(currentId);
+    const filePool = searching ? files : files.filter(f => (f.folder_id == null ? null : Number(f.folder_id)) === (currentId == null ? null : currentId));
+    const directFiles = filePool
+      .filter(f => UI.searchMatch([f.name, f.folder], S.folderQ))
       .sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')));
 
     // Explorer-style navigation: only root folders appear at the root level.

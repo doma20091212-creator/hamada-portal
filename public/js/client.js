@@ -143,8 +143,13 @@
     chips.querySelectorAll('.fchip').forEach((b) => (b.onclick = () => { folderSel = b.dataset.f === folderSel ? '' : b.dataset.f; render(); }));
 
     const selectedParent = folderSel ? Number(folderSel) : null;
-    const visibleFolders = directChildFolders(selectedParent);
-    const shown = directFiles(selectedParent).filter((f) => !q.trim() || f.name.toLowerCase().includes(q.trim().toLowerCase()));
+    const searching = q.trim().length > 0;
+    // While searching, look across every folder (not just the one open) so a
+    // client doesn't have to remember which folder a file was filed under.
+    const visibleFolders = searching ? [] : directChildFolders(selectedParent);
+    const shown = (searching ? files : directFiles(selectedParent))
+      .filter((f) => UI.searchMatch([f.name, f.folder], q))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     const box = document.getElementById('myFiles');
     const empty = document.getElementById('myEmpty');
 

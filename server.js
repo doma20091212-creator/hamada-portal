@@ -825,9 +825,14 @@ app.get('/api/admin/files', requireAdmin, async (req, res) => {
     params.push(parseInt(client_id, 10));
     sql += ` AND f.client_id = $${params.length}`;
   }
-  if (q.trim()) {
-    params.push(`%${q.trim().toLowerCase()}%`);
-    sql += ` AND (lower(f.name) LIKE $${params.length} OR lower(f.folder) LIKE $${params.length})`;
+  // Multi-word "AND" search: every word must appear somewhere across the file
+  // name, folder, client name, or file notes, in any order.
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+  for (const w of words) {
+    params.push(`%${w}%`);
+    const p = `$${params.length}`;
+    sql += ` AND (lower(f.name) LIKE ${p} OR lower(f.folder) LIKE ${p} OR lower(c.name) LIKE ${p} OR lower(c.name_ar) LIKE ${p}
+      OR EXISTS (SELECT 1 FROM file_notes fn2 WHERE fn2.file_id=f.id AND lower(fn2.note) LIKE ${p}))`;
   }
   sql += ` ORDER BY f.created_at DESC LIMIT 2000`;
 

@@ -282,6 +282,18 @@
     const lo = document.getElementById('logoutBtn'); if (lo) lo.onclick = logout;
   }
 
+  /* ------------------------------- search --------------------------------- */
+  // Multi-word "AND" substring matching: every word in the query must appear
+  // somewhere in the combined fields, in any order and regardless of
+  // separators (so "invoice march" matches "March_Invoice_2024.pdf").
+  function searchMatch(fields, query) {
+    const q = String(query ?? '').trim().toLowerCase();
+    if (!q) return true;
+    const words = q.split(/\s+/).filter(Boolean);
+    const hay = (Array.isArray(fields) ? fields : [fields]).filter((v) => v != null && v !== '').join(' ').toLowerCase();
+    return words.every((w) => hay.includes(w));
+  }
+
   async function loadBrand() {
     try {
       const b = await api('/brand', { csrf: false });
@@ -292,5 +304,5 @@
     } catch {}
   }
 
-  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand };
+  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand, searchMatch };
 })();
