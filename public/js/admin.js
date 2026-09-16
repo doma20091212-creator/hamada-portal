@@ -68,8 +68,10 @@
     render();
   }
 
+  const hasGroupsAccess = () => has('settings') || has('manage_groups');
+
   async function loadGroups() {
-    if (!has('settings')) { S.groups = []; return; }
+    if (!hasGroupsAccess()) { S.groups = []; return; }
     try { S.groups = (await UI.api('/admin/client-groups')).groups || []; }
     catch (e) { S.groups = []; }
   }
@@ -89,7 +91,12 @@
     if (S.tab === 'inbox') renderInbox();
     if (S.tab === 'files') loadAllFiles();
     if (S.tab === 'admins') { loadAdmins().then(renderAdmins); }
-    if (S.tab === 'settings') { loadSettings(); loadAudit(); loadGroups().then(renderGroups); }
+    if (S.tab === 'settings') {
+      const brandCard = document.getElementById('brandSettingsCard'); if (brandCard) brandCard.hidden = !has('settings');
+      const auditCard = document.getElementById('auditLogCard'); if (auditCard) auditCard.hidden = !has('settings');
+      const groupsCard = document.getElementById('groupsCard'); if (groupsCard) groupsCard.hidden = !hasGroupsAccess();
+      loadSettings(); loadAudit(); loadGroups().then(renderGroups);
+    }
   }
 
 
@@ -98,7 +105,7 @@
       S.profile = await UI.api('/admin/profile');
       const owner = !!S.profile.is_owner;
       const adminsNav = document.getElementById('adminsNav'); if (adminsNav) adminsNav.hidden = !owner;
-      const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings');
+      const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings') && !S.profile.permissions.includes('manage_groups');
       const canManageClients = owner || S.profile.permissions.includes('manage_clients');
     const addClient = document.getElementById('addClientBtn'); if (addClient) addClient.hidden = !canManageClients;
     const importClients = document.getElementById('importClientsBtn'); if (importClients) importClients.hidden = !canManageClients;
@@ -195,7 +202,7 @@
   function renderClientGroupChips() {
     const wrap = document.getElementById('clientGroupChips');
     if (!wrap) return;
-    if (!has('settings') || !S.groups.length) { wrap.innerHTML = ''; return; }
+    if (!hasGroupsAccess() || !S.groups.length) { wrap.innerHTML = ''; return; }
     const chip = (key, label, count) => `<button class="fchip ${S.clientGroupFilter === key ? 'active' : ''}" data-group-filter="${key}">${esc(label)}${count !== undefined ? ` <span class="muted folder-count">${count}</span>` : ''}</button>`;
     wrap.innerHTML = chip('', t('all'), S.clients.length)
       + chip('base', t('client_group_base'), S.clients.filter((c) => !c.group_id).length)

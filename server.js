@@ -1111,13 +1111,13 @@ app.post('/api/chat/:clientId', requireAuth, async (req,res)=>{
 
 /* ------------------------------- client groups -------------------------------- */
 app.get('/api/admin/client-groups', requireAdmin, async (req,res)=>{
-  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'});
+  if(!(await requirePermission(req,res,'settings')) && !(await requirePermission(req,res,'manage_groups')))return res.status(403).json({error:'permission_denied'});
   const groups=await db.all(`SELECT g.id,g.name,g.sort_order,COUNT(u.id)::int AS client_count FROM client_groups g LEFT JOIN users u ON u.group_id=g.id AND u.role='client' GROUP BY g.id ORDER BY g.sort_order,g.name`);
   for(const g of groups){ g.client_ids=(await db.all(`SELECT id FROM users WHERE group_id=$1 AND role='client'`,[g.id])).map(r=>r.id); }
   res.json({groups});
 });
 app.post('/api/admin/client-groups', requireAdmin, async (req,res)=>{
-  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'});
+  if(!(await requirePermission(req,res,'settings')) && !(await requirePermission(req,res,'manage_groups')))return res.status(403).json({error:'permission_denied'});
   const name=U.sanitizeName(req.body?.name||'',120); if(!name)return res.status(400).json({error:'invalid_data'});
   const clientIds=[...new Set((Array.isArray(req.body?.client_ids)?req.body.client_ids:[]).map(Number).filter(Number.isInteger))];
   try {
@@ -1129,7 +1129,7 @@ app.post('/api/admin/client-groups', requireAdmin, async (req,res)=>{
   } catch(e){ if(e.code==='23505')return res.status(409).json({error:'group_exists'}); throw e; }
 });
 app.put('/api/admin/client-groups/:id', requireAdmin, async (req,res)=>{
-  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'});
+  if(!(await requirePermission(req,res,'settings')) && !(await requirePermission(req,res,'manage_groups')))return res.status(403).json({error:'permission_denied'});
   const id=parseInt(req.params.id,10); const g=await db.get(`SELECT id FROM client_groups WHERE id=$1`,[id]); if(!g)return res.status(404).json({error:'not_found'});
   const name=req.body?.name!==undefined?U.sanitizeName(req.body.name,120):undefined;
   if(name!==undefined && !name)return res.status(400).json({error:'invalid_data'});
@@ -1146,7 +1146,7 @@ app.put('/api/admin/client-groups/:id', requireAdmin, async (req,res)=>{
   } catch(e){ if(e.code==='23505')return res.status(409).json({error:'group_exists'}); throw e; }
 });
 app.delete('/api/admin/client-groups/:id', requireAdmin, async (req,res)=>{
-  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'});
+  if(!(await requirePermission(req,res,'settings')) && !(await requirePermission(req,res,'manage_groups')))return res.status(403).json({error:'permission_denied'});
   const id=parseInt(req.params.id,10); const g=await db.get(`SELECT id FROM client_groups WHERE id=$1`,[id]); if(!g)return res.status(404).json({error:'not_found'});
   await db.run(`DELETE FROM client_groups WHERE id=$1`,[id]);
   await audit(req,'client_group_deleted','client_group',id,{}); res.json({ok:true});

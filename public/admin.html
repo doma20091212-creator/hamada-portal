@@ -109,7 +109,7 @@
       </section>
 
       <section class="tab" id="tab-settings" hidden>
-        <div class="card" style="padding:20px">
+        <div class="card" style="padding:20px" id="brandSettingsCard">
           <h2 data-i18n="portal_settings">Portal settings</h2><p class="muted" data-i18n="settings_hint">These values are editable without changing the code.</p>
           <div class="grid2">
             <label class="field"><span data-i18n="brand_name_en">Brand name (English)</span><input class="input" id="setNameEn" maxlength="200"></label>
@@ -119,14 +119,14 @@
           </div>
           <div style="margin-top:16px"><button class="btn primary" id="saveSettingsBtn" data-i18n="save_settings">Save settings</button></div>
         </div>
-        <div class="card table-card" style="margin-top:16px">
+        <div class="card table-card" style="margin-top:16px" id="groupsCard">
           <div class="toolbar" style="margin:0;padding:16px 16px 0">
-            <div><h2 data-i18n="client_groups">Client groups</h2><p class="muted" data-i18n="client_groups_hint">Group clients into named folders for quick filtering on the Clients page. Clients left out of every group stay in Base.</p></div>
+            <div><h2 data-i18n="client_groups">Client groups</h2><p class="muted" data-i18n="client_groups_hint">Group clients into named folders for quick filtering on the Clients page. Clients left out of every group stay in Separate.</p></div>
             <button class="btn primary" id="addGroupBtn"><span class="plus">+</span><span data-i18n="new_group">New group</span></button>
           </div>
           <table class="tbl" id="groupsTbl"></table><div class="empty" id="groupsEmpty" hidden></div>
         </div>
-        <div class="card table-card" style="margin-top:16px"><div style="padding:16px 16px 0"><h2 data-i18n="audit_log">Audit log</h2></div><table class="tbl" id="auditTbl"></table></div>
+        <div class="card table-card" style="margin-top:16px" id="auditLogCard"><div style="padding:16px 16px 0"><h2 data-i18n="audit_log">Audit log</h2></div><table class="tbl" id="auditTbl"></table></div>
       </section>
     </main>
   </div>
