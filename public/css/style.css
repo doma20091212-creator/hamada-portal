@@ -263,8 +263,13 @@ textarea.input{resize:vertical;min-height:64px}
   .mobile-menu-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;flex:0 0 auto;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--navy-ink);cursor:pointer}
   .side-backdrop{display:block;position:fixed;inset:0;background:rgba(8,17,35,.5);z-index:199;opacity:0;visibility:hidden;transition:opacity .25s ease,visibility .25s ease}
   .side-backdrop.show{opacity:1;visibility:visible}
-  .side{position:fixed;inset-block:0;inset-inline-start:0;height:100vh;width:280px;max-width:82vw;z-index:200;transform:translateX(-100%);box-shadow:0 0 40px rgba(0,0,0,.35)}
-  [dir=rtl] .side{inset-inline-start:auto;inset-inline-end:0;transform:translateX(100%)}
+  /* Physical left/right on purpose: transform:translateX() never flips with
+     direction, so anchoring with a logical inset-inline-* here (which DOES
+     flip) desyncs the anchor from the slide direction in RTL — the drawer's
+     "closed" position ends up only partly off-screen, silently blocking
+     clicks on whatever sits behind it (the hamburger button included). */
+  .side{position:fixed;inset-block:0;left:0;height:100vh;width:280px;max-width:82vw;z-index:200;transform:translateX(-100%);box-shadow:0 0 40px rgba(0,0,0,.35)}
+  [dir=rtl] .side{left:auto;right:0;transform:translateX(100%)}
   .side.open{transform:translateX(0)}
   .side-brand{position:relative}
   .side-close{display:flex;align-items:center;justify-content:center;position:absolute;top:0;inset-inline-end:0;width:30px;height:30px;border-radius:50%;border:none;background:rgba(255,255,255,.1);color:#fff;font-size:20px;line-height:1;cursor:pointer}
