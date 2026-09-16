@@ -95,7 +95,12 @@
     box.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.getAttribute('data-i18n')); });
     box.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
     const entry = { wrap, box, onClose };
-    wrap.addEventListener('mousedown', (e) => { if (e.target === wrap && !wrap.classList.contains('noclose')) closeModal(); });
+    // Only treat this as a backdrop click if it's inside the wrap's actual content
+    // box — e.target === wrap is also true when the click lands on the wrap's own
+    // scrollbar (e.g. dragging it on a tall modal), which must never close the modal.
+    wrap.addEventListener('mousedown', (e) => {
+      if (e.target === wrap && e.offsetX <= wrap.clientWidth && e.offsetY <= wrap.clientHeight && !wrap.classList.contains('noclose')) closeModal();
+    });
     const escFn = (e) => {
       if (e.key === 'Escape' && stack[stack.length - 1] === entry && !wrap.classList.contains('noclose')) closeModal();
     };
@@ -115,6 +120,14 @@
     const e = stack.pop();
     if (!e) return;
     e.detach && e.detach();
+    // Strip ids immediately (before the ~160ms fade-out finishes and the node is
+    // actually removed) so a closing modal can never be found by
+    // document.getElementById()/querySelector('#...') while a freshly-opened
+    // modal reuses the same ids (e.g. a "save, then reopen" flow) — otherwise
+    // the new modal's own script wiring can silently read/write into the old,
+    // about-to-vanish DOM instead of the new one.
+    if (e.box.id) e.box.removeAttribute('id');
+    e.box.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
     const finish = () => { e.wrap.remove(); if (e.onClose) e.onClose(); };
     if (Motion && !reduceMotion) {
       Motion.animate(e.box, { opacity: [1, 0], y: [0, 8], scale: [1, 0.97] }, { duration: 0.16, easing: [0.4, 0, 1, 1] });
@@ -124,6 +137,11 @@
       finish();
     }
   }
+
+  // Drains the entire modal stack. Safer than a fixed number of closeModal()
+  // calls when a flow needs to land back on a freshly-reopened modal — guessing
+  // the stack depth wrong leaves stale, duplicate-id modals stuck underneath.
+  function closeAllModals() { while (stack.length) closeModal(); }
 
   function confirmBox(msg, danger = true) {
     return new Promise((resolve) => {
@@ -340,5 +358,5 @@
     } catch {}
   }
 
-  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand, searchMatch, isPreviewable, previewFile };
+  window.UI = { esc, api, setBusy, finishPageLoad, boot: bootInto, toast, errToast, openModal, closeModal, closeAllModals, confirmBox, passwordModal, icon, wireDropzone, clientCheckFiles, logout, bindTopActions, loadBrand, searchMatch, isPreviewable, previewFile };
 })();

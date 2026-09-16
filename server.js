@@ -928,6 +928,19 @@ app.get('/api/admin/folders/download-selected', requireAdmin, async (req,res)=>{
   if(!all.length)return res.status(400).json({error:'folder_empty'}); await sendZip(res,all,'selected-folders');
 });
 
+// Combined bulk download for the per-client folder browser, where an admin can
+// select both files and subfolders at once (mirrors /api/client/download-selected).
+app.get('/api/admin/download-selected', requireAdmin, async (req,res)=>{
+  let folderIds=[],fileIds=[]; try{folderIds=JSON.parse(String(req.query.folder_ids||'[]'));fileIds=JSON.parse(String(req.query.file_ids||'[]'));}catch(_){return res.status(400).json({error:'invalid_ids'});}
+  folderIds=[...new Set((Array.isArray(folderIds)?folderIds:[]).map(Number).filter(Number.isInteger))].slice(0,50);
+  fileIds=[...new Set((Array.isArray(fileIds)?fileIds:[]).map(Number).filter(Number.isInteger))].slice(0,100);
+  if(!folderIds.length && !fileIds.length) return res.status(400).json({error:'invalid_ids'});
+  const entries=[];
+  for(const id of folderIds){const f=await db.get(`SELECT id,client_id,name FROM folders WHERE id=$1`,[id]); if(!f)continue; if(!(await requirePermission(req,res,'view_files',f.client_id)))return res.status(403).json({error:'permission_denied'}); const data=await getFolderZipEntries(id,f.client_id); if(data)entries.push(...data.entries.map(x=>({...x,path:`${f.name}/${x.path}`})));}
+  for(const id of fileIds){const f=await db.get(`SELECT id,client_id,name,stored,created_at FROM files WHERE id=$1`,[id]); if(!f)continue; if(!(await requirePermission(req,res,'view_files',f.client_id)))return res.status(403).json({error:'permission_denied'}); entries.push({...f,path:f.name});}
+  if(!entries.length)return res.status(400).json({error:'nothing_selected'}); await sendZip(res,entries,'selected-items');
+});
+
 
 app.get('/api/client/download-selected', requireAuth, async (req,res)=>{
   if(req.user.role!=='client')return res.status(403).json({error:'not_allowed'});

@@ -403,12 +403,18 @@
   }
 
   /* ------------------------------ folder modal -------------------------------- */
+  let folderViewGen = 0;
   async function openFolder(id) {
     try {
       S.folderView = await UI.api('/admin/client-folders/' + id);
       S.folderFilter = ''; S.folderQ = ''; S.pending = [];
+      const myGen = ++folderViewGen;
       const entry = renderFolderModal();
-      if (entry) entry.onClose = () => { S.folderView = null; S.pending = []; };
+      // A modal's own close animation finishes ~160ms after closeModal() is
+      // called. If this flow already closed and reopened a fresher folder
+      // modal in the meantime (a newer generation), that stale close must not
+      // null out the state the newer modal is actively using.
+      if (entry) entry.onClose = () => { if (folderViewGen === myGen) { S.folderView = null; S.pending = []; } };
     }
     catch (e) { UI.errToast(e); }
   }
@@ -529,8 +535,8 @@
        const tree=(items,level=0)=>items.map(f=>`<div class="folder-row" draggable="true" data-folder-id="${f.id}" data-folder-parent="${f.parent_id??''}" style="display:flex;align-items:center;gap:8px;padding:8px 0 8px ${level*22}px;border-bottom:1px solid var(--line-soft)"><span class="folder-drag" title="${esc(t('drag_to_reorder'))}" aria-label="${esc(t('drag_to_reorder'))}">⠿</span><span>${UI.icon('folder')}</span><b style="flex:1">${esc(f.name)}</b>${count(f.file_count)}<button class="iconbtn" data-ren="${f.id}" title="${esc(t('rename_folder'))}">${UI.icon('pencil')}</button><button class="iconbtn danger" data-delete="${f.id}" title="${esc(t('remove'))}">${UI.icon('trash')}</button></div>${tree(children(f.id),level+1)}`).join('');
       UI.openModal(`<h2>${esc(t('folders'))}</h2><p class="muted">${esc(t('folder_hint'))}</p><div id="folderTree">${tree(roots)||`<div class="muted">${esc(t('no_folders'))}</div>`}</div><div class="modal-foot"><button class="btn primary" id="newFolderBtn">+ ${esc(t('new_folder'))}</button><button class="btn ghost" id="folderClose">${esc(t('close'))}</button></div>`,{wide:true});
       document.getElementById('folderClose').onclick=()=>UI.closeModal();
-      document.getElementById('newFolderBtn').onclick=async()=>{const opts=`<option value="">${esc(t('root'))}</option>`+folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');UI.openModal(`<h2>${esc(t('new_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="nfName" maxlength="120"></label><label class="field"><span>${esc(t('inside'))}</span><select class="input" id="nfParent">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="nfC">${esc(t('cancel'))}</button><button class="btn primary" id="nfS">${esc(t('create'))}</button></div>`);document.getElementById('nfC').onclick=()=>UI.closeModal();document.getElementById('nfS').onclick=async()=>{try{await UI.api('/admin/clients/'+clientId+'/folders',{method:'POST',body:{name:document.getElementById('nfName').value.trim(),parent_id:document.getElementById('nfParent').value||null}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};};
-      document.querySelectorAll('[data-ren]').forEach(b=>b.onclick=async()=>{const f=folders.find(x=>x.id===+b.dataset.ren);if(!f)return;UI.openModal(`<h2>${esc(t('rename_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="rfName" value="${esc(f.name)}"></label><div class="modal-foot"><button class="btn ghost" id="rfC">${esc(t('cancel'))}</button><button class="btn primary" id="rfS">${esc(t('save'))}</button></div>`);document.getElementById('rfC').onclick=()=>UI.closeModal();document.getElementById('rfS').onclick=async()=>{try{await UI.api('/admin/folders/'+f.id,{method:'PUT',body:{name:document.getElementById('rfName').value.trim()}});UI.closeModal();UI.closeModal();await openFolder(clientId);}catch(e){UI.errToast(e);}};});
+      document.getElementById('newFolderBtn').onclick=async()=>{const opts=`<option value="">${esc(t('root'))}</option>`+folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');UI.openModal(`<h2>${esc(t('new_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="nfName" maxlength="120"></label><label class="field"><span>${esc(t('inside'))}</span><select class="input" id="nfParent">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="nfC">${esc(t('cancel'))}</button><button class="btn primary" id="nfS">${esc(t('create'))}</button></div>`);document.getElementById('nfC').onclick=()=>UI.closeModal();document.getElementById('nfS').onclick=async()=>{try{await UI.api('/admin/clients/'+clientId+'/folders',{method:'POST',body:{name:document.getElementById('nfName').value.trim(),parent_id:document.getElementById('nfParent').value||null}});UI.closeAllModals();await openFolder(clientId);}catch(e){UI.errToast(e);}};};
+      document.querySelectorAll('[data-ren]').forEach(b=>b.onclick=async()=>{const f=folders.find(x=>x.id===+b.dataset.ren);if(!f)return;UI.openModal(`<h2>${esc(t('rename_folder'))}</h2><label class="field"><span>${esc(t('name'))}</span><input class="input" id="rfName" value="${esc(f.name)}"></label><div class="modal-foot"><button class="btn ghost" id="rfC">${esc(t('cancel'))}</button><button class="btn primary" id="rfS">${esc(t('save'))}</button></div>`);document.getElementById('rfC').onclick=()=>UI.closeModal();document.getElementById('rfS').onclick=async()=>{try{await UI.api('/admin/folders/'+f.id,{method:'PUT',body:{name:document.getElementById('rfName').value.trim()}});UI.closeAllModals();await openFolder(clientId);}catch(e){UI.errToast(e);}};});
       document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{
         const f=folders.find(x=>x.id===+b.dataset.delete);
         if(!f)return;
@@ -540,8 +546,7 @@
           await UI.api('/admin/folders/'+f.id,{method:'DELETE'});
           UI.toast(t('folder_deleted'),'ok');
           if(S.folderFilter && Number(S.folderFilter)===Number(f.id)) S.folderFilter=f.parent_id?String(f.parent_id):'';
-          UI.closeModal();
-          await folderManagerModal(clientId);
+          UI.closeAllModals();
           await openFolder(clientId);
         }catch(e){
           if(e && e.code==='folder_not_empty') UI.toast(t('folder_not_empty'),'err');
@@ -658,7 +663,54 @@
 
   function wireFileSelection(tbl){ if(!tbl)return; tbl.querySelectorAll('.file-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.fileSelect);cb.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id);if(S.folderView)renderFolderTable();else renderFiles();}); const all=tbl.querySelector('.select-all-files');if(all){const ids=[...tbl.querySelectorAll('.file-select')].map(x=>Number(x.dataset.fileSelect));all.checked=ids.length>0&&ids.every(id=>S.selectedFiles.has(id));all.indeterminate=ids.some(id=>S.selectedFiles.has(id))&&!all.checked;all.onchange=()=>{ids.forEach(id=>all.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id));if(S.folderView)renderFolderTable();else renderFiles();};}}
   function renderFileSelectionBar(){const el=document.getElementById('filesSelectionBar');if(!el)return;const n=S.selectedFiles.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFileDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('delete_files')?`<button class="btn danger sm" id="bulkFileDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFileSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFileSelection').onclick=()=>{S.selectedFiles.clear();renderFiles();};const d=document.getElementById('bulkFileDownload');if(d)d.onclick=()=>{location.href='/api/admin/files/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFiles]));};const x=document.getElementById('bulkFileDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFiles]){try{await UI.api('/admin/files/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFiles.clear();await loadAllFiles();};}
-  function renderFolderSelectionBar(){const el=document.getElementById('folderSelectionBar');if(!el)return;const n=S.selectedFolders.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFolderDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('manage_folders')?`<button class="btn danger sm" id="bulkFolderDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFolderSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFolderSelection').onclick=()=>{S.selectedFolders.clear();renderFolderTable();};const d=document.getElementById('bulkFolderDownload');if(d)d.onclick=()=>{location.href='/api/admin/folders/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFolders]));};const x=document.getElementById('bulkFolderDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFolders]){try{await UI.api('/admin/folders/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFolders.clear();await openFolder(S.folderView.client.id);};}
+  function renderFolderSelectionBar(){
+    const el=document.getElementById('folderSelectionBar'); if(!el)return;
+    const nFiles=S.selectedFiles.size, nFolders=S.selectedFolders.size, n=nFiles+nFolders;
+    el.hidden=!n; if(!n)return;
+    const canDelete=(nFiles>0&&has('delete_files'))||(nFolders>0&&has('manage_folders'));
+    const canMove=nFiles>0&&has('manage_folders');
+    el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFolderDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${canMove?`<button class="btn ghost sm" id="bulkFileMove">${UI.icon('move')} ${esc(t('move_selected'))}</button>`:''}${canDelete?`<button class="btn danger sm" id="bulkFolderDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFolderSelection">${esc(t('clear_selection'))}</button></span>`;
+    document.getElementById('clearFolderSelection').onclick=()=>{S.selectedFiles.clear();S.selectedFolders.clear();renderFolderTable();};
+    const d=document.getElementById('bulkFolderDownload'); if(d)d.onclick=()=>{
+      const p=new URLSearchParams();
+      p.set('folder_ids',JSON.stringify([...S.selectedFolders]));
+      p.set('file_ids',JSON.stringify([...S.selectedFiles]));
+      location.href='/api/admin/download-selected?'+p.toString();
+    };
+    const mv=document.getElementById('bulkFileMove'); if(mv)mv.onclick=()=>bulkMoveFilesModal();
+    const x=document.getElementById('bulkFolderDelete'); if(x)x.onclick=async()=>{
+      if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;
+      const tree=S.folderView.folderTree||[]; const byId=new Map(tree.map(f=>[Number(f.id),f]));
+      if(has('delete_files'))for(const id of [...S.selectedFiles]){try{await UI.api('/admin/files/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}
+      if(has('manage_folders'))for(const id of [...S.selectedFolders]){
+        if(S.folderFilter && Number(S.folderFilter)===Number(id)){const node=byId.get(Number(id));S.folderFilter=node&&node.parent_id?String(node.parent_id):'';}
+        try{await UI.api('/admin/folders/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}
+      }
+      S.selectedFiles.clear(); S.selectedFolders.clear();
+      await refreshFolder();
+    };
+  }
+
+  function bulkMoveFilesModal(){
+    const tree=S.folderView.folderTree||[];
+    const byId=new Map(tree.map(f=>[Number(f.id),f]));
+    const depth=(f)=>{let d=0,cur=f;while(cur&&cur.parent_id!=null){cur=byId.get(Number(cur.parent_id));d++;}return d;};
+    const opts=`<option value="">${esc(t('root'))}</option>`+tree.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(f=>`<option value="${f.id}">${'— '.repeat(depth(f))}${esc(f.name)}</option>`).join('');
+    UI.openModal(`<h2>${esc(t('move_selected_title'))}</h2><p class="sub">${S.selectedFiles.size} ${esc(t('files').toLowerCase())}</p><label class="field"><span>${esc(t('destination_folder'))}</span><select class="input" id="bmFolder">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="bmC">${esc(t('cancel'))}</button><button class="btn primary" id="bmS">${esc(t('move'))}</button></div>`);
+    document.getElementById('bmC').onclick=()=>UI.closeModal();
+    document.getElementById('bmS').onclick=async()=>{
+      const folderId=document.getElementById('bmFolder').value||null;
+      const btn=document.getElementById('bmS'); btn.disabled=true;
+      let ok=0;
+      for(const id of [...S.selectedFiles]){
+        try{await UI.api('/admin/files/'+id,{method:'PUT',body:{folder_id:folderId}});ok++;}catch(e){UI.errToast(e);}
+      }
+      UI.closeModal();
+      UI.toast(`${ok} ${t('moved')}`,ok?'ok':'');
+      S.selectedFiles.clear();
+      await refreshFolder();
+    };
+  }
 
   const refreshFolder = () => UI.api('/admin/client-folders/' + S.folderView.client.id).then((d) => { S.folderView = d; renderFolderTable(); Promise.all([loadStats(), loadClients()]).then(renderClients); });
   function wireFolderActions() {
