@@ -4,6 +4,8 @@
     en: {
       office_panel: 'Office panel',
       signin: 'Sign in',
+      signin_eyebrow: 'Client access',
+      auth_side_quote: 'Precision, confidentiality, and a dedicated partner for your books.',
       email_or_phone: 'Email or phone number',
       password: 'Password',
       login_hint: 'Your account was created by the office. Your first password is your phone number.',
@@ -249,6 +251,8 @@
     ar: {
       office_panel: 'لوحة المكتب',
       signin: 'تسجيل الدخول',
+      signin_eyebrow: 'دخول العملاء',
+      auth_side_quote: 'الدقة والسرّية، وشريك مخصص لحساباتكم.',
       email_or_phone: 'البريد الإلكتروني أو رقم الهاتف',
       password: 'كلمة المرور',
       login_hint: 'قام المكتب بإنشاء حسابك. كلمة المرور الأولى هي رقم هاتفك.',
