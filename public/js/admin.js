@@ -78,7 +78,7 @@
     document.querySelectorAll('.tab').forEach((s) => (s.hidden = s.id !== 'tab-' + S.tab));
     if (S.tab === 'clients') renderClients();
     if (S.tab === 'inbox') renderInbox();
-    if (S.tab === 'files') { refreshClientFilter(); renderFiles(); }
+    if (S.tab === 'files') loadAllFiles();
     if (S.tab === 'admins') { loadAdmins().then(renderAdmins); }
     if (S.tab === 'settings') { loadSettings(); loadAudit(); }
   }
