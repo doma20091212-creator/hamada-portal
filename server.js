@@ -1130,7 +1130,7 @@ app.delete('/api/admin/client-groups/:id', requireAdmin, async (req,res)=>{
 
 /* ------------------------------ portal settings ------------------------------ */
 app.get('/api/settings', requireAdmin, async (req,res)=>{
-  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'}); const rows=await db.all(`SELECT key,value,updated_at FROM portal_settings ORDER BY key`); res.json({settings:Object.fromEntries(rows.map(r=>[r.key,r.value]))});
+  if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'}); const rows=await db.all(`SELECT key,value,updated_at FROM portal_settings WHERE key LIKE 'brand.%' ORDER BY key`); res.json({settings:Object.fromEntries(rows.map(r=>[r.key,r.value]))});
 });
 app.put('/api/settings', requireAdmin, async (req,res)=>{
   if(!(await requirePermission(req,res,'settings')))return res.status(403).json({error:'permission_denied'}); const allowed=['brand.name_en','brand.name_ar','brand.tagline_en','brand.tagline_ar'];
@@ -1202,7 +1202,8 @@ app.get('/api/file/:id/download', async (req, res) => {
 /* -------------------------------- OAuth2 Callbacks --------------------------- */
 // Connecting Drive decides where every future upload is stored, so only the owner
 // may do it, and the callback must carry the state issued to this owner's session.
-const OWNER_ONLY_DRIVE_MSG = 'Only the portal owner can connect Google Drive. Log in as the owner and try again.';
+const DRIVE_TOKEN_KEY = 'google.refresh_token';
+const OWNER_ONLY_DRIVE_MSG ='Only the portal owner can connect Google Drive. Log in as the owner and try again.';
 
 app.get('/auth/google/connect', async (req, res) => {
   if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send(OWNER_ONLY_DRIVE_MSG);
@@ -1220,28 +1221,17 @@ app.get('/auth/google/callback', async (req, res) => {
   try {
     const tokens = await getTokens(code);
     const refreshToken = tokens.refresh_token;
-    if (refreshToken) {
-      process.env.GOOGLE_REFRESH_TOKEN = refreshToken;
-      const envPath = path.join(__dirname, '.env');
-      let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
-      if (envContent.includes('GOOGLE_REFRESH_TOKEN=')) {
-        envContent = envContent.replace(/GOOGLE_REFRESH_TOKEN=.*/g, `GOOGLE_REFRESH_TOKEN=${refreshToken}`);
-      } else {
-        envContent += `\nGOOGLE_REFRESH_TOKEN=${refreshToken}\n`;
-      }
-      fs.writeFileSync(envPath, envContent);
+    if (!refreshToken) {
+      return res.status(400).send(`<div style="font-family:sans-serif;max-width:560px;margin:50px auto;line-height:1.5;">Google did not return a new token. Remove this app's access at myaccount.google.com/permissions, then open /auth/google/connect again.</div>`);
     }
-    // The page carries a live credential: keep it out of any cache.
-    res.setHeader('Cache-Control', 'no-store');
-    const tokenBlock = refreshToken
-      ? `<p style="color:#4b5563;line-height:1.5;text-align:left;"><b>One more step, or this stops working at the next restart:</b> copy the token below, then in Render open this service → <b>Environment</b>, set <code>GOOGLE_REFRESH_TOKEN</code> to it and save. Do not share it with anyone.</p>
-         <textarea readonly onclick="this.select()" style="width:100%;height:90px;font-family:monospace;font-size:12px;">${U.escapeHtml(refreshToken)}</textarea>`
-      : `<p style="color:#b45309;line-height:1.5;">Google did not return a new token. Remove this app's access at myaccount.google.com/permissions, then open /auth/google/connect again.</p>`;
+    // Stored in the database so it survives restarts; env vars can't be changed from here.
+    await db.run(`INSERT INTO portal_settings(key,value,updated_by) VALUES($1,$2,$3) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, [DRIVE_TOKEN_KEY, refreshToken, req.user.id]);
+    process.env.GOOGLE_REFRESH_TOKEN = refreshToken;
+    await audit(req, 'google_drive_connected', 'settings', null, {});
     res.send(`
       <div style="font-family:sans-serif;max-width:560px;margin:50px auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;text-align:center;">
         <h2 style="color:#10b981;margin-bottom:10px;">✓ Google Drive Connected!</h2>
-        <p style="color:#4b5563;line-height:1.5;">Uploads will now be stored in your Google Drive folder.</p>
-        ${tokenBlock}
+        <p style="color:#4b5563;line-height:1.5;">Uploads will now be stored in your Google Drive folder. The connection is saved and stays active after restarts.</p>
         <a href="/admin" style="display:inline-block;margin-top:15px;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Return to Admin Panel</a>
       </div>
     `);
@@ -1281,6 +1271,9 @@ app.use((err, req, res, next) => {
 async function startServer() {
   await initDb();
   await bootstrapAdmin();
+  // A token saved by reconnecting from the portal is newer than the one in the env.
+  const saved = await db.get(`SELECT value FROM portal_settings WHERE key=$1`, [DRIVE_TOKEN_KEY]);
+  if (saved && saved.value) process.env.GOOGLE_REFRESH_TOKEN = saved.value;
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Hamada Portal running on http://0.0.0.0:${PORT}`);
