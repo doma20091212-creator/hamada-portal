@@ -1200,11 +1200,19 @@ app.get('/api/file/:id/download', async (req, res) => {
 });
 
 /* -------------------------------- OAuth2 Callbacks --------------------------- */
-app.get('/api/auth/google/url', requireAdmin, (req, res) => {
-  res.json({ url: getAuthUrl() });
+// Connecting Drive decides where every future upload is stored, so only the owner
+// may do it, and the callback must carry the state issued to this owner's session.
+app.get('/api/auth/google/url', requireAdmin, async (req, res) => {
+  if (!(await isOwner(db, req.user.id))) return res.status(403).json({ error: 'owner_only' });
+  req.session.oauthState = crypto.randomBytes(24).toString('hex');
+  res.json({ url: getAuthUrl(req.session.oauthState) });
 });
 
 app.get('/auth/google/callback', async (req, res) => {
+  if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send('Only the portal owner can connect Google Drive. Log in as the owner and try again.');
+  const expected = req.session.oauthState;
+  req.session.oauthState = null;
+  if (!expected || req.query.state !== expected) return res.status(400).send('This Google Drive connection link is invalid or expired. Start again from the portal.');
   const code = req.query.code;
   if (!code) return res.status(400).send('Missing authorization code');
   try {
