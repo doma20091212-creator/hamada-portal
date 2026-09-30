@@ -1205,21 +1205,32 @@ app.get('/api/file/:id/download', async (req, res) => {
 const DRIVE_TOKEN_KEY = 'google.refresh_token';
 const OWNER_ONLY_DRIVE_MSG ='Only the portal owner can connect Google Drive. Log in as the owner and try again.';
 
+// Google requires an absolute URL; fall back to this server's own callback when the
+// configured value isn't one. Google still only accepts URIs registered for the client.
+function driveRedirectUri(req) {
+  const configured = String(process.env.GOOGLE_REDIRECT_URI || '').trim();
+  if (/^https?:\/\//i.test(configured)) return configured;
+  return `${req.protocol}://${req.get('host')}/auth/google/callback`;
+}
+
 app.get('/auth/google/connect', async (req, res) => {
   if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send(OWNER_ONLY_DRIVE_MSG);
   req.session.oauthState = crypto.randomBytes(24).toString('hex');
-  res.redirect(getAuthUrl(req.session.oauthState));
+  req.session.oauthRedirect = driveRedirectUri(req);
+  res.redirect(getAuthUrl(req.session.oauthState, req.session.oauthRedirect));
 });
 
 app.get('/auth/google/callback', async (req, res) => {
   if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send(OWNER_ONLY_DRIVE_MSG);
   const expected = req.session.oauthState;
+  const redirectUri = req.session.oauthRedirect;
   req.session.oauthState = null;
+  req.session.oauthRedirect = null;
   if (!expected || req.query.state !== expected) return res.status(400).send('This Google Drive connection link is invalid or expired. Start again from /auth/google/connect.');
   const code = req.query.code;
   if (!code) return res.status(400).send('Missing authorization code');
   try {
-    const tokens = await getTokens(code);
+    const tokens = await getTokens(code, redirectUri);
     const refreshToken = tokens.refresh_token;
     if (!refreshToken) {
       return res.status(400).send(`<div style="font-family:sans-serif;max-width:560px;margin:50px auto;line-height:1.5;">Google did not return a new token. Remove this app's access at myaccount.google.com/permissions, then open /auth/google/connect again.</div>`);
