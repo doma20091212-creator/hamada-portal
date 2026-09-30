@@ -1202,17 +1202,19 @@ app.get('/api/file/:id/download', async (req, res) => {
 /* -------------------------------- OAuth2 Callbacks --------------------------- */
 // Connecting Drive decides where every future upload is stored, so only the owner
 // may do it, and the callback must carry the state issued to this owner's session.
-app.get('/api/auth/google/url', requireAdmin, async (req, res) => {
-  if (!(await isOwner(db, req.user.id))) return res.status(403).json({ error: 'owner_only' });
+const OWNER_ONLY_DRIVE_MSG = 'Only the portal owner can connect Google Drive. Log in as the owner and try again.';
+
+app.get('/auth/google/connect', async (req, res) => {
+  if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send(OWNER_ONLY_DRIVE_MSG);
   req.session.oauthState = crypto.randomBytes(24).toString('hex');
-  res.json({ url: getAuthUrl(req.session.oauthState) });
+  res.redirect(getAuthUrl(req.session.oauthState));
 });
 
 app.get('/auth/google/callback', async (req, res) => {
-  if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send('Only the portal owner can connect Google Drive. Log in as the owner and try again.');
+  if (!req.user || req.user.role !== 'admin' || !(await isOwner(db, req.user.id))) return res.status(403).send(OWNER_ONLY_DRIVE_MSG);
   const expected = req.session.oauthState;
   req.session.oauthState = null;
-  if (!expected || req.query.state !== expected) return res.status(400).send('This Google Drive connection link is invalid or expired. Start again from the portal.');
+  if (!expected || req.query.state !== expected) return res.status(400).send('This Google Drive connection link is invalid or expired. Start again from /auth/google/connect.');
   const code = req.query.code;
   if (!code) return res.status(400).send('Missing authorization code');
   try {
@@ -1229,10 +1231,17 @@ app.get('/auth/google/callback', async (req, res) => {
       }
       fs.writeFileSync(envPath, envContent);
     }
+    // The page carries a live credential: keep it out of any cache.
+    res.setHeader('Cache-Control', 'no-store');
+    const tokenBlock = refreshToken
+      ? `<p style="color:#4b5563;line-height:1.5;text-align:left;"><b>One more step, or this stops working at the next restart:</b> copy the token below, then in Render open this service → <b>Environment</b>, set <code>GOOGLE_REFRESH_TOKEN</code> to it and save. Do not share it with anyone.</p>
+         <textarea readonly onclick="this.select()" style="width:100%;height:90px;font-family:monospace;font-size:12px;">${U.escapeHtml(refreshToken)}</textarea>`
+      : `<p style="color:#b45309;line-height:1.5;">Google did not return a new token. Remove this app's access at myaccount.google.com/permissions, then open /auth/google/connect again.</p>`;
     res.send(`
-      <div style="font-family:sans-serif;max-width:520px;margin:50px auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;text-align:center;">
+      <div style="font-family:sans-serif;max-width:560px;margin:50px auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;text-align:center;">
         <h2 style="color:#10b981;margin-bottom:10px;">✓ Google Drive Connected!</h2>
-        <p style="color:#4b5563;line-height:1.5;">Your personal Google Drive has been connected. All future file uploads will now land directly inside your Google Drive folder.</p>
+        <p style="color:#4b5563;line-height:1.5;">Uploads will now be stored in your Google Drive folder.</p>
+        ${tokenBlock}
         <a href="/admin" style="display:inline-block;margin-top:15px;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Return to Admin Panel</a>
       </div>
     `);
