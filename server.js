@@ -2,6 +2,7 @@ require('dotenv').config();
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -55,8 +56,9 @@ async function bootstrapAdmin() {
 }
 
 /* --------------------------------- upload middleware -------------------------------- */
+// Buffered on disk, not in RAM: 12 x 25 MB in memory can exhaust a small instance.
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({ destination: os.tmpdir() }),
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: MAX_FILES_PER_REQ },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(U.latinFix(file.originalname)).toLowerCase().slice(1);
@@ -67,7 +69,13 @@ const upload = multer({
   },
 });
 
+function removeTempUploads(req) {
+  const files = req.file ? [req.file] : (req.files || []);
+  for (const f of files) if (f.path) fs.unlink(f.path, () => {});
+}
+
 function withUpload(req, res, next) {
+  res.once('close', () => removeTempUploads(req));
   upload.array('files', MAX_FILES_PER_REQ)(req, res, (err) => {
     if (err) {
       if (err.message === 'bad_type') return res.status(400).json({ error: 'file_type_not_allowed' });
@@ -80,6 +88,7 @@ function withUpload(req, res, next) {
 }
 
 function withUploadSingle(req, res, next) {
+  res.once('close', () => removeTempUploads(req));
   upload.single('file')(req, res, (err) => {
     if (err) {
       if (err.message === 'bad_type') return res.status(400).json({ error: 'file_type_not_allowed' });
@@ -203,6 +212,21 @@ async function sendZip(res, entries, archiveName) {
 
 /* --------------------------------- app setup -------------------------------- */
 const app = express();
+
+// Express 4 does not pass a rejected async handler to the error middleware; left
+// unhandled, the rejection terminates the process. Forward it to next() instead.
+function forwardAsyncErrors(fn) {
+  if (typeof fn !== 'function' || fn.length === 4 || fn.handle) return fn;
+  return function (req, res, next) {
+    const out = fn.call(this, req, res, next);
+    if (out && typeof out.catch === 'function') out.catch(next);
+    return out;
+  };
+}
+for (const method of ['use', 'get', 'post', 'put', 'delete']) {
+  const original = app[method].bind(app);
+  app[method] = (...args) => original(...args.map(forwardAsyncErrors));
+}
 
 // Reject malformed numeric route IDs before they reach PostgreSQL.
 // This prevents values such as /api/admin/folders/undefined from becoming NaN
@@ -454,13 +478,8 @@ app.get('/api/me/files', requireClient, async (req, res) => {
 app.post('/api/me/send', requireClient, withUpload, async (req, res) => {
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no_files' });
   const note = U.sanitizeName((req.body && req.body.note) || '', 500);
-  try {
-    const rows = await saveFiles({ client_id: req.user.id, sender_id: req.user.id, inbox: 1, files: req.files, note });
-    res.json({ ok: true, count: rows.length });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'server_error' });
-  }
+  const rows = await saveFiles({ client_id: req.user.id, sender_id: req.user.id, inbox: 1, files: req.files, note });
+  res.json({ ok: true, count: rows.length });
 });
 
 app.delete('/api/me/sent/:id', requireClient, async (req, res) => {
@@ -685,13 +704,8 @@ app.post('/api/admin/clients/:id/files', requireAdmin, withUpload, async (req, r
   }
   const note = U.sanitizeName((req.body && req.body.note) || '', 300);
 
-  try {
-    const rows = await saveFiles({ client_id: c.id, sender_id: req.user.id, inbox: 0, folder, note, files: req.files, driveParentId, folderId });
-    res.json({ ok: true, saved: rows.length });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'server_error' });
-  }
+  const rows = await saveFiles({ client_id: c.id, sender_id: req.user.id, inbox: 0, folder, note, files: req.files, driveParentId, folderId });
+  res.json({ ok: true, saved: rows.length });
 });
 
 app.put('/api/admin/files/:id', requireAdmin, async (req, res) => {
@@ -1230,9 +1244,19 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 
 app.use((req, res) => res.status(404).sendFile(path.join(__dirname, 'public', '404.html')));
 
+function driveErrorCode(err) {
+  const msg = String((err && err.message) || '');
+  const googleErr = err && err.response && err.response.data && err.response.data.error;
+  if (/GOOGLE_REFRESH_TOKEN|GOOGLE_DRIVE_FOLDER_ID/.test(msg) || ['invalid_grant', 'invalid_client', 'unauthorized_client'].includes(googleErr || msg)) return 'drive_auth_failed';
+  if (err && err.config && String(err.config.url || '').includes('googleapis.com')) return 'drive_error';
+  return null;
+}
+
 app.use((err, req, res, next) => {
-  console.error(err);
+  const driveCode = driveErrorCode(err);
+  console.error(driveCode ? `[drive] ${driveCode} on ${req.method} ${req.path}: ${err.message}` : err);
   if (res.headersSent) return next(err);
+  if (driveCode) return res.status(driveCode === 'drive_auth_failed' ? 503 : 502).json({ error: driveCode });
   res.status(500).json({ error: 'server_error' });
 });
 
@@ -1246,4 +1270,10 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+
+// Exit so the host restarts us, instead of idling with no port bound.
+startServer().catch((err) => {
+  console.error('[boot] Failed to start:', err);
+  process.exit(1);
+});
