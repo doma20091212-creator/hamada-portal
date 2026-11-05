@@ -1085,6 +1085,47 @@ app.post('/api/chat/:clientId', requireAuth, async (req,res)=>{
   const r=await db.run(`INSERT INTO chat_messages(client_id,sender_id,sender_role,message) VALUES($1,$2,$3,$4) RETURNING id,created_at`,[cid,req.user.id,req.user.role,message]); await audit(req,'chat_message','client',cid,{}); res.json({ok:true,message:{id:r.rows[0].id,created_at:r.rows[0].created_at}});
 });
 
+/* ------------------------------ messages inbox ------------------------------ */
+// Full message history for the office, unlike the client's view which resets daily.
+// Scoped to the clients this admin may chat with.
+async function chatScope(req) {
+  if (!(await requirePermission(req, null, 'chat'))) return null;
+  if (await isOwner(db, req.user.id)) return { sql: '', params: [] };
+  return { sql: `AND m.client_id IN (SELECT client_id FROM admin_client_access WHERE admin_id=$1 AND starts_at <= NOW() AND (expires_at IS NULL OR expires_at > NOW()))`, params: [req.user.id] };
+}
+
+app.get('/api/admin/messages/threads', requireAdmin, async (req, res) => {
+  const scope = await chatScope(req); if (!scope) return res.status(403).json({ error: 'permission_denied' });
+  const threads = await db.all(`
+    SELECT u.id AS client_id, u.name, u.name_ar, u.email, u.phone,
+           last.message AS last_message, last.sender_role AS last_sender_role, last.created_at AS last_at,
+           (SELECT COUNT(*)::int FROM chat_messages x WHERE x.client_id=u.id AND x.sender_role='client' AND x.read_at IS NULL) AS unread
+    FROM (SELECT DISTINCT m.client_id FROM chat_messages m WHERE TRUE ${scope.sql}) c
+    JOIN users u ON u.id=c.client_id
+    CROSS JOIN LATERAL (SELECT message, sender_role, created_at FROM chat_messages WHERE client_id=u.id ORDER BY created_at DESC, id DESC LIMIT 1) last
+    ORDER BY last.created_at DESC`, scope.params);
+  res.json({ threads });
+});
+
+// Lightweight poll for the badge and new-message notifications.
+app.get('/api/admin/messages/poll', requireAdmin, async (req, res) => {
+  const scope = await chatScope(req); if (!scope) return res.json({ unread: 0, latest_id: 0, new_messages: [] });
+  const after = Math.max(0, parseInt(req.query.after, 10) || 0);
+  const totals = await db.get(`SELECT COUNT(*) FILTER (WHERE m.read_at IS NULL)::int AS unread, COALESCE(MAX(m.id),0)::bigint AS latest_id FROM chat_messages m WHERE m.sender_role='client' ${scope.sql}`, scope.params);
+  const fresh = after ? await db.all(`SELECT m.id, m.client_id, m.message, m.created_at, u.name, u.name_ar FROM chat_messages m JOIN users u ON u.id=m.client_id WHERE m.sender_role='client' AND m.id > $${scope.params.length + 1} ${scope.sql} ORDER BY m.id ASC LIMIT 20`, [...scope.params, after]) : [];
+  res.json({ unread: totals.unread, latest_id: Number(totals.latest_id), new_messages: fresh });
+});
+
+app.get('/api/admin/messages/:clientId', requireAdmin, async (req, res) => {
+  const cid = parseInt(req.params.clientId, 10);
+  if (!(await requirePermission(req, res, 'chat', cid))) return res.status(403).json({ error: 'permission_denied' });
+  const client = await db.get(`SELECT id, name, name_ar, email, phone FROM users WHERE id=$1 AND role='client'`, [cid]);
+  if (!client) return res.status(404).json({ error: 'not_found' });
+  const rows = await db.all(`SELECT * FROM (SELECT m.id, m.sender_role, m.message, m.created_at, m.read_at, u.name AS sender_name, u.name_ar AS sender_name_ar FROM chat_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.client_id=$1 ORDER BY m.created_at DESC, m.id DESC LIMIT 300) r ORDER BY created_at ASC, id ASC`, [cid]);
+  await db.run(`UPDATE chat_messages SET read_at=NOW() WHERE client_id=$1 AND sender_role='client' AND read_at IS NULL`, [cid]);
+  res.json({ client, messages: rows });
+});
+
 /* ------------------------------- client groups -------------------------------- */
 app.get('/api/admin/client-groups', requireAdmin, async (req,res)=>{
   if(!(await requirePermission(req,res,'settings')) && !(await requirePermission(req,res,'manage_groups')))return res.status(403).json({error:'permission_denied'});

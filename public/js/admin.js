@@ -23,6 +23,9 @@
     permissionDefs: [],
     groups: [],
     clientGroupFilter: '', // '' = all, 'base' = ungrouped, else numeric group id (string)
+    msgThreads: [],
+    msgClientId: null,   // conversation open in the Messages tab
+    msgView: null,       // {client, messages}
   };
 
   async function init() {
@@ -45,6 +48,7 @@
 
     window.__onLangChange = () => render();
     await refreshAll();
+    if (has('chat')) startMessagePolling();
   }
 
   async function refreshAll() {
@@ -66,13 +70,14 @@
     render();
   }
 
-  const TAB_TITLE = () => ({ clients: t('clients'), inbox: t('inbox'), files: t('all_files'), admins: t('admins_permissions'), settings: t('portal_settings') })[S.tab] || 'Admin';
+  const TAB_TITLE = () => ({ clients: t('clients'), inbox: t('inbox'), messages: t('messages'), files: t('all_files'), admins: t('admins_permissions'), settings: t('portal_settings') })[S.tab] || 'Admin';
 
   function render() {
     document.getElementById('pageTitle').textContent = TAB_TITLE();
     document.querySelectorAll('.tab').forEach((s) => (s.hidden = s.id !== 'tab-' + S.tab));
     if (S.tab === 'clients') renderClients();
     if (S.tab === 'inbox') renderInbox();
+    if (S.tab === 'messages') renderMessages();
     if (S.tab === 'files') loadAllFiles();
     if (S.tab === 'admins') { loadAdmins().then(renderAdmins); }
     if (S.tab === 'settings') {
@@ -89,6 +94,7 @@
       S.profile = await UI.api('/admin/profile');
       const owner = !!S.profile.is_owner;
       const adminsNav = document.getElementById('adminsNav'); if (adminsNav) adminsNav.hidden = !owner;
+      const messagesNav = document.getElementById('messagesNav'); if (messagesNav) messagesNav.hidden = !owner && !S.profile.permissions.includes('chat');
       const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings') && !S.profile.permissions.includes('manage_groups');
       const canManageClients = owner || S.profile.permissions.includes('manage_clients');
     const addClient = document.getElementById('addClientBtn'); if (addClient) addClient.hidden = !canManageClients;
@@ -209,7 +215,7 @@
           <td class="cell-sub">${esc(window.I18N.fmtDate(c.last_upload))}</td>
           <td><div class="row-actions">
             <button class="iconbtn" data-act="folder" title="${esc(t('open_folder'))}">${UI.icon('eye')}</button>
-            ${has('chat') ? `<button class="iconbtn" data-act="chat" title="${esc(t('daily_chat'))}">💬</button>` : ''}
+            ${has('chat') ? `<button class="iconbtn" data-act="chat" title="${esc(t('messages'))}">💬</button>` : ''}
             ${has('manage_clients') ? `<button class="iconbtn" data-act="edit" title="${esc(t('edit'))}">${UI.icon('pencil')}</button>` : ''}
             ${has('manage_clients') ? `<button class="iconbtn" data-act="reset" title="${esc(t('reset_password'))}">${UI.icon('key')}</button><button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>` : ''}
           </div></td>
@@ -224,7 +230,7 @@
       const id = +b.closest('tr').dataset.id;
       const c = S.clients.find((x) => x.id === id);
       if (b.dataset.act === 'folder') openFolder(id);
-      if (b.dataset.act === 'chat') chatModal(c);
+      if (b.dataset.act === 'chat') openConversation(c.id);
       if (b.dataset.act === 'edit') clientFormModal(c);
       if (b.dataset.act === 'reset') resetPw(c);
       if (b.dataset.act === 'del') delClient(c);
@@ -239,16 +245,156 @@
     const d=document.getElementById('bulkClientDelete');if(d)d.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;let ok=0;for(const id of [...S.selectedClients]){try{await UI.api('/admin/clients/'+id,{method:'DELETE'});ok++;}catch(e){UI.errToast(e);}}S.selectedClients.clear();UI.toast(`${ok} ${t('deleted')}`,'ok');await refreshAll();};
   }
 
-  async function chatModal(c){
-    if(!has('chat'))return;
-    let msgs=[]; try{msgs=(await UI.api('/chat/'+c.id,{csrf:false})).messages||[];}catch(e){UI.errToast(e);return;}
-    const renderMsgs=(arr)=>arr.length?arr.map(m=>{const sender=m.sender_role==='admin'?(window.I18N.lang==='ar'&&m.sender_name_ar?m.sender_name_ar:(m.sender_name||t('office_panel'))):(window.I18N.lang==='ar'&&c.name_ar?c.name_ar:c.name);return `<div style="align-self:${m.sender_role==='admin'?'flex-end':'flex-start'};max-width:80%;padding:8px 10px;border:1px solid var(--line);border-radius:9px"><b>${esc(sender)}</b><div>${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`;}).join(''):`<span class="muted">${esc(t('no_messages_today'))}</span>`;
-    UI.openModal(`<h2>${esc(t('daily_chat'))} — ${esc(cname(c))}</h2><p class="muted">${esc(t('chat_resets'))}</p><div id="admChatList" style="height:300px;overflow:auto;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);padding:10px;border-radius:8px">${renderMsgs(msgs)}</div><div style="display:flex;gap:8px;margin-top:10px"><input class="input" id="admChatInput" maxlength="1000" placeholder="${esc(t('write_message'))}"><button class="btn primary" id="admChatSend">${esc(t('send'))}</button></div><div class="modal-foot"><button class="btn ghost" id="admChatClose">${esc(t('close'))}</button></div>`,{wide:true});
-    const box=document.getElementById('admChatList'); box.scrollTop=box.scrollHeight;
-    document.getElementById('admChatClose').onclick=()=>UI.closeModal();
-    const send=async()=>{const i=document.getElementById('admChatInput'),m=i.value.trim();if(!m)return;try{await UI.api('/chat/'+c.id,{method:'POST',body:{message:m}});i.value='';const d=await UI.api('/chat/'+c.id,{csrf:false});box.innerHTML=renderMsgs(d.messages||[]);box.scrollTop=box.scrollHeight;}catch(e){UI.errToast(e);}};
-    document.getElementById('admChatSend').onclick=send; document.getElementById('admChatInput').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+  /* -------------------------------- messages ---------------------------------- */
+  const MSG_POLL_MS = 15000;
+  let msgLatestId = 0, msgPolling = false;
+  const baseTitle = document.title;
+  const clientLabel = (c) => (window.I18N.lang === 'ar' && c.name_ar) ? c.name_ar : c.name;
+
+  function setMessagesBadge(n) {
+    const badge = document.getElementById('messagesBadge');
+    if (badge) { badge.hidden = !n; badge.textContent = n > 99 ? '99+' : n; }
+    document.title = n ? `(${n}) ${baseTitle}` : baseTitle;
   }
+
+  function startMessagePolling() {
+    updateNotifyButton();
+    pollMessages(true);
+    setInterval(() => pollMessages(false), MSG_POLL_MS);
+    // Catch up straight away when the office comes back to this tab.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollMessages(false); });
+  }
+
+  async function pollMessages(first) {
+    if (msgPolling) return; msgPolling = true;
+    try {
+      const d = await UI.api('/admin/messages/poll' + (msgLatestId ? '?after=' + msgLatestId : ''), { csrf: false, busy: false });
+      const fresh = first ? [] : (d.new_messages || []);
+      msgLatestId = Math.max(msgLatestId, d.latest_id || 0);
+      setMessagesBadge(d.unread || 0);
+      if (fresh.length) {
+        notifyNewMessages(fresh);
+        if (S.tab === 'messages') {
+          const openHit = S.msgClientId && fresh.some((m) => m.client_id === S.msgClientId);
+          if (openHit && !document.hidden) await loadConversation(S.msgClientId, false);
+          await loadThreads(); renderThreads();
+        }
+      }
+    } catch { /* quiet: a missed poll is retried in 15s */ }
+    finally { msgPolling = false; }
+  }
+
+  function notifyNewMessages(list) {
+    const byClient = new Map();
+    list.forEach((m) => byClient.set(m.client_id, m));
+    byClient.forEach((m) => {
+      const who = clientLabel(m), text = m.message.length > 90 ? m.message.slice(0, 90) + '…' : m.message;
+      UI.toast(`${t('new_message_from')} ${who}: ${text}`, 'ok');
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        try {
+          const n = new Notification(`${t('new_message_from')} ${who}`, { body: text, tag: 'msg-' + m.client_id, icon: '/assets/logo.png' });
+          n.onclick = () => { window.focus(); openConversation(m.client_id); n.close(); };
+        } catch { /* some browsers only allow notifications from a service worker */ }
+      }
+    });
+    playChime();
+  }
+
+  function playChime() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+      const ctx = playChime.ctx || (playChime.ctx = new Ctx());
+      [880, 1320].forEach((f, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain(), at = ctx.currentTime + i * 0.14;
+        o.frequency.value = f; o.type = 'sine';
+        g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.18, at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.25);
+        o.connect(g).connect(ctx.destination); o.start(at); o.stop(at + 0.3);
+      });
+    } catch { /* audio blocked until the page has been clicked once */ }
+  }
+
+  function updateNotifyButton() {
+    const btn = document.getElementById('notifyBtn'); if (!btn) return;
+    btn.hidden = !('Notification' in window) || Notification.permission !== 'default';
+    btn.onclick = async () => { try { await Notification.requestPermission(); } catch {} updateNotifyButton(); };
+  }
+
+  async function loadThreads() {
+    try { S.msgThreads = (await UI.api('/admin/messages/threads', { csrf: false, busy: false })).threads || []; }
+    catch (e) { UI.errToast(e); }
+  }
+
+  async function loadConversation(clientId, busy = true) {
+    try {
+      S.msgView = await UI.api('/admin/messages/' + clientId, { csrf: false, busy });
+      S.msgClientId = clientId;
+      const th = S.msgThreads.find((x) => x.client_id === clientId); if (th) th.unread = 0;
+      renderThreads(); renderConversation();
+      pollMessages(false); // refresh the badge now that these are read
+    } catch (e) { UI.errToast(e); }
+  }
+
+  function openConversation(clientId) {
+    S.msgClientId = clientId; S.msgView = null;
+    setTab('messages');
+  }
+
+  async function renderMessages() {
+    updateNotifyButton();
+    await loadThreads();
+    renderThreads();
+    if (S.msgClientId) await loadConversation(S.msgClientId);
+    else renderConversation();
+  }
+
+  function renderThreads() {
+    const el = document.getElementById('msgThreads'); if (!el) return;
+    if (!S.msgThreads.length) { el.innerHTML = `<div class="empty">${esc(t('no_conversations'))}</div>`; return; }
+    el.innerHTML = S.msgThreads.map((th) => {
+      const mine = th.last_sender_role === 'admin';
+      return `<button class="msg-ti ${th.client_id === S.msgClientId ? 'active' : ''} ${th.unread ? 'unread' : ''}" data-cid="${th.client_id}">
+        <span class="msg-ti-top"><b>${esc(clientLabel(th))}</b><small class="muted">${esc(window.I18N.fmtDate(th.last_at))}</small></span>
+        <span class="msg-ti-last" dir="auto">${mine ? `<span class="muted">${esc(t('you'))}: </span>` : ''}${esc(th.last_message)}</span>
+        ${th.unread ? `<span class="nav-badge">${th.unread > 99 ? '99+' : th.unread}</span>` : ''}
+      </button>`;
+    }).join('');
+    el.querySelectorAll('[data-cid]').forEach((b) => (b.onclick = () => { S.msgClientId = +b.dataset.cid; renderThreads(); loadConversation(S.msgClientId); }));
+  }
+
+  function renderConversation() {
+    const el = document.getElementById('msgThread'), layout = document.getElementById('msgLayout'); if (!el) return;
+    layout.classList.toggle('show-thread', !!S.msgView);
+    if (!S.msgView) { el.innerHTML = `<div class="empty">${esc(t('pick_conversation'))}</div>`; return; }
+    const c = S.msgView.client, msgs = S.msgView.messages || [];
+    el.innerHTML = `
+      <div class="msg-head">
+        <button class="iconbtn msg-back" id="msgBack" aria-label="${esc(t('back'))}">‹</button>
+        <div><div class="cell-main">${esc(clientLabel(c))}</div><div class="cell-sub">${esc(c.email)} · ${esc(c.phone)}</div></div>
+        <button class="btn ghost sm" id="msgOpenFolder">${esc(t('open_folder'))}</button>
+      </div>
+      <div class="msg-list" id="msgList">${msgs.length ? msgs.map((m) => {
+        const office = m.sender_role === 'admin';
+        const sender = office ? ((window.I18N.lang === 'ar' && m.sender_name_ar) ? m.sender_name_ar : (m.sender_name || t('office_panel'))) : clientLabel(c);
+        return `<div class="msg-bubble ${office ? 'office' : 'client'}"><b>${esc(sender)}</b><div class="msg-text" dir="auto">${esc(m.message)}</div><small class="muted">${esc(window.I18N.fmtDate(m.created_at))}</small></div>`;
+      }).join('') : `<div class="muted">${esc(t('no_messages_yet'))}</div>`}</div>
+      <div class="msg-compose"><input class="input" id="msgInput" maxlength="1000" placeholder="${esc(t('write_message'))}" autocomplete="off"><button class="btn primary" id="msgSend">${esc(t('send'))}</button></div>`;
+    const list = document.getElementById('msgList'); list.scrollTop = list.scrollHeight;
+    document.getElementById('msgBack').onclick = () => { S.msgClientId = null; S.msgView = null; renderThreads(); renderConversation(); };
+    document.getElementById('msgOpenFolder').onclick = () => { setTab('clients'); openFolder(c.id); };
+    const input = document.getElementById('msgInput');
+    const send = async () => {
+      const message = input.value.trim(); if (!message) return;
+      try {
+        await UI.api('/chat/' + c.id, { method: 'POST', body: { message }, loadingMessage: t('sending') });
+        input.value = '';
+        await loadConversation(c.id, false); await loadThreads(); renderThreads();
+        document.getElementById('msgInput')?.focus();
+      } catch (e) { UI.errToast(e); }
+    };
+    document.getElementById('msgSend').onclick = send;
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  }
+
 
   async function resetPw(c) {
     if (!(await UI.confirmBox(`${esc(cname(c))} — ${esc(t('reset_password'))}?`, false))) return;
