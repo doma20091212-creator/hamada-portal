@@ -783,6 +783,46 @@ app.put('/api/admin/files/:id', requireAdmin, async (req, res) => {
   await audit(req,'file_updated','file',f.id,{name:newName,folder_id:newFolderId}); res.json({ ok: true });
 });
 
+// Move several files at once to any client, into its main folder or any folder/subfolder.
+// Files from the inbox are filed into the destination as they move.
+app.post('/api/admin/files/move', requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const ids = [...new Set((Array.isArray(b.file_ids) ? b.file_ids : []).map((x) => parseInt(x, 10)).filter((x) => x > 0))].slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: 'no_files' });
+  const clientId = parseInt(b.client_id, 10);
+  const client = clientId ? await db.get(`SELECT id FROM users WHERE id=$1 AND role='client'`, [clientId]) : null;
+  if (!client) return res.status(404).json({ error: 'not_found' });
+  if (!(await requirePermission(req, res, 'manage_folders', clientId))) return res.status(403).json({ error: 'permission_denied' });
+
+  const folderId = b.folder_id ? parseInt(b.folder_id, 10) : null;
+  let target = { driveId: process.env.GOOGLE_DRIVE_FOLDER_ID, name: '' };
+  if (folderId) {
+    const fo = await db.get(`SELECT id, name, drive_id FROM folders WHERE id=$1 AND client_id=$2`, [folderId, clientId]);
+    if (!fo) return res.status(400).json({ error: 'invalid_folder' });
+    target = { driveId: fo.drive_id, name: fo.name };
+  }
+
+  const files = await db.all(`SELECT id, client_id, stored, folder_id, inbox FROM files WHERE id=ANY($1::int[])`, [ids]);
+  const canSource = new Map();
+  const failed = ids.filter((id) => !files.some((f) => f.id === id)).map((id) => ({ id, error: 'not_found' }));
+  let moved = 0;
+  for (const f of files) {
+    if (!canSource.has(f.client_id)) canSource.set(f.client_id, await requirePermission(req, res, 'manage_folders', f.client_id));
+    if (!canSource.get(f.client_id)) { failed.push({ id: f.id, error: 'permission_denied' }); continue; }
+    if (f.client_id === clientId && (f.folder_id || null) === folderId && !f.inbox) { moved++; continue; }
+    try {
+      if (target.driveId) await moveFile(f.stored, target.driveId);
+      await db.run(`UPDATE files SET client_id=$1, folder_id=$2, folder=$3, inbox=0 WHERE id=$4`, [clientId, folderId, target.name, f.id]);
+      moved++;
+    } catch (e) {
+      console.error('[move] file', f.id, e.message);
+      failed.push({ id: f.id, error: driveErrorCode(e) || 'move_failed' });
+    }
+  }
+  await audit(req, 'files_moved', 'client', clientId, { folder_id: folderId, moved, failed: failed.length });
+  res.json({ ok: true, moved, failed });
+});
+
 app.delete('/api/admin/files/:id', requireAdmin, async (req, res) => {
   const existingForPerm = await db.get(`SELECT client_id FROM files WHERE id=$1`, [req.params.id]);
   if (!existingForPerm) return res.status(404).json({ error: 'not_found' });

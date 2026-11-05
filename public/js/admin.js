@@ -910,7 +910,7 @@
   }
 
   function wireFileSelection(tbl){ if(!tbl)return; tbl.querySelectorAll('.file-select').forEach(cb=>cb.onchange=()=>{const id=Number(cb.dataset.fileSelect);cb.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id);if(S.folderView)renderFolderTable();else renderFiles();}); const all=tbl.querySelector('.select-all-files');if(all){const ids=[...tbl.querySelectorAll('.file-select')].map(x=>Number(x.dataset.fileSelect));all.checked=ids.length>0&&ids.every(id=>S.selectedFiles.has(id));all.indeterminate=ids.some(id=>S.selectedFiles.has(id))&&!all.checked;all.onchange=()=>{ids.forEach(id=>all.checked?S.selectedFiles.add(id):S.selectedFiles.delete(id));if(S.folderView)renderFolderTable();else renderFiles();};}}
-  function renderFileSelectionBar(){const el=document.getElementById('filesSelectionBar');if(!el)return;const n=S.selectedFiles.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFileDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('delete_files')?`<button class="btn danger sm" id="bulkFileDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFileSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFileSelection').onclick=()=>{S.selectedFiles.clear();renderFiles();};const d=document.getElementById('bulkFileDownload');if(d)d.onclick=()=>{location.href='/api/admin/files/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFiles]));};const x=document.getElementById('bulkFileDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFiles]){try{await UI.api('/admin/files/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFiles.clear();await loadAllFiles();};}
+  function renderFileSelectionBar(){const el=document.getElementById('filesSelectionBar');if(!el)return;const n=S.selectedFiles.size;el.hidden=!n;if(!n)return;el.innerHTML=`<span><b>${n}</b> ${esc(t('selected'))}</span><span class="selection-actions">${has('view_files')?`<button class="btn ghost sm" id="bulkFileDownload">${UI.icon('download')} ${esc(t('download_selected'))}</button>`:''}${has('manage_folders')?`<button class="btn ghost sm" id="bulkAllMove">${UI.icon('move')} ${esc(t('move_selected'))}</button>`:''}${has('delete_files')?`<button class="btn danger sm" id="bulkFileDelete">${UI.icon('trash')} ${esc(t('delete_selected'))}</button>`:''}<button class="btn ghost sm" id="clearFileSelection">${esc(t('clear_selection'))}</button></span>`;document.getElementById('clearFileSelection').onclick=()=>{S.selectedFiles.clear();renderFiles();};const mvAll=document.getElementById('bulkAllMove');if(mvAll)mvAll.onclick=()=>moveFilesModal(S.files.filter((f)=>S.selectedFiles.has(f.id)),async()=>{await loadAllFiles();await Promise.all([loadStats(),loadClients()]);renderClients();if(S.folderView)refreshFolder();});const d=document.getElementById('bulkFileDownload');if(d)d.onclick=()=>{location.href='/api/admin/files/download-selected?ids='+encodeURIComponent(JSON.stringify([...S.selectedFiles]));};const x=document.getElementById('bulkFileDelete');if(x)x.onclick=async()=>{if(!(await UI.confirmBox(`${t('delete_selected')} (${n})`)))return;for(const id of [...S.selectedFiles]){try{await UI.api('/admin/files/'+id,{method:'DELETE'});}catch(e){UI.errToast(e);}}S.selectedFiles.clear();await loadAllFiles();};}
   function renderFolderSelectionBar(){
     const el=document.getElementById('folderSelectionBar'); if(!el)return;
     const nFiles=S.selectedFiles.size, nFolders=S.selectedFolders.size, n=nFiles+nFolders;
@@ -940,24 +940,8 @@
   }
 
   function bulkMoveFilesModal(){
-    const tree=S.folderView.folderTree||[];
-    const byId=new Map(tree.map(f=>[Number(f.id),f]));
-    const depth=(f)=>{let d=0,cur=f;while(cur&&cur.parent_id!=null){cur=byId.get(Number(cur.parent_id));d++;}return d;};
-    const opts=`<option value="">${esc(t('root'))}</option>`+tree.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(f=>`<option value="${f.id}">${'— '.repeat(depth(f))}${esc(f.name)}</option>`).join('');
-    UI.openModal(`<h2>${esc(t('move_selected_title'))}</h2><p class="sub">${S.selectedFiles.size} ${esc(t('files').toLowerCase())}</p><label class="field"><span>${esc(t('destination_folder'))}</span><select class="input" id="bmFolder">${opts}</select></label><div class="modal-foot"><button class="btn ghost" id="bmC">${esc(t('cancel'))}</button><button class="btn primary" id="bmS">${esc(t('move'))}</button></div>`);
-    document.getElementById('bmC').onclick=()=>UI.closeModal();
-    document.getElementById('bmS').onclick=async()=>{
-      const folderId=document.getElementById('bmFolder').value||null;
-      const btn=document.getElementById('bmS'); btn.disabled=true;
-      let ok=0;
-      for(const id of [...S.selectedFiles]){
-        try{await UI.api('/admin/files/'+id,{method:'PUT',body:{folder_id:folderId}});ok++;}catch(e){UI.errToast(e);}
-      }
-      UI.closeModal();
-      UI.toast(`${ok} ${t('moved')}`,ok?'ok':'');
-      S.selectedFiles.clear();
-      await refreshFolder();
-    };
+    const chosen=(S.folderView.files||[]).filter((f)=>S.selectedFiles.has(f.id)).map((f)=>({...f,client_id:S.folderView.client.id}));
+    moveFilesModal(chosen, () => refreshFolder());
   }
 
   const refreshFolder = () => UI.api('/admin/client-folders/' + S.folderView.client.id).then((d) => { S.folderView = d; renderFolderTable(); Promise.all([loadStats(), loadClients()]).then(renderClients); });
@@ -971,7 +955,7 @@
       if (b.dataset.act === 'preview') UI.previewFile(f);
       if (b.dataset.act === 'note') noteModal(f, refreshFolder);
       if (b.dataset.act === 'rn') renameModal(f, refreshFolder);
-      if (b.dataset.act === 'mv') moveModal(f, refreshFolder);
+      if (b.dataset.act === 'mv') moveModal({ ...f, client_id: S.folderView.client.id }, refreshFolder);
       if (b.dataset.act === 'del') delFile(f, refreshFolder);
     }));
   }
@@ -1009,32 +993,91 @@
     };
   }
 
-  function moveModal(f, after) {
-    const opts = S.clients.map((c) => `<option value="${c.id}" ${c.id === f.client_id ? 'selected' : ''}>${esc(cname(c))}</option>`).join('');
+  function moveModal(f, after) { moveFilesModal([f], after); }
+
+  /* Move one or more files to any client → folder → subfolder. */
+  function moveFilesModal(files, after) {
+    files = files.filter(Boolean);
+    if (!files.length) return;
+    const sameClient = files.every((f) => f.client_id === files[0].client_id);
+    const state = { clientId: sameClient ? files[0].client_id : (S.clients[0] && S.clients[0].id), folderId: null, tree: [] };
+    const cache = new Map();
+    const names = files.slice(0, 3).map((f) => f.name).join(' · ') + (files.length > 3 ? ` ${t('and_n_more').replace('{n}', files.length - 3)}` : '');
+    const opts = S.clients.map((c) => `<option value="${c.id}" ${c.id === state.clientId ? 'selected' : ''}>${esc(cname(c))}</option>`).join('');
+    const folderIcon = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 5h6l2 2h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg>';
+    const homeIcon = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3 2 11h3v9h6v-6h2v6h6v-9h3L12 3Z"/></svg>';
+
     UI.openModal(`
-      <h2>${esc(t('move_title'))}</h2>
-      <p class="sub">${esc(f.name)}</p>
-      <label class="field"><span>${esc(t('destination'))}</span>
-        <select class="input" id="mvClient">${opts}</select></label>
-      <label class="field"><span>${esc(t('subfolder'))}</span><input class="input" id="mvFolder" value="${esc(f.folder || '')}" maxlength="60"></label>
-      <div class="modal-foot"><button class="btn ghost" id="mvC">${esc(t('cancel'))}</button><button class="btn primary" id="mvS">${esc(t('move'))}</button></div>`);
-    document.getElementById('mvC').onclick = () => UI.closeModal();
-    document.getElementById('mvS').onclick = async () => {
+      <h2>${esc(files.length === 1 ? t('move_title') : t('move_n_files').replace('{n}', files.length))}</h2>
+      <p class="sub mv-names" dir="auto">${esc(names)}</p>
+      <label class="field"><span>${esc(t('client'))}</span><select class="input" id="mvClient">${opts}</select></label>
+      <div class="mv-tree-head"><span>${esc(t('choose_folder'))}</span>${has('manage_folders') ? `<button type="button" class="btn ghost sm" id="mvNewBtn">+ ${esc(t('new_folder_here'))}</button>` : ''}</div>
+      <div class="mv-new" id="mvNew" hidden><input class="input" id="mvNewName" maxlength="120" placeholder="${esc(t('new_folder'))}" autocomplete="off"><button type="button" class="btn primary sm" id="mvNewOk">${esc(t('create'))}</button><button type="button" class="btn ghost sm" id="mvNewCancel">${esc(t('cancel'))}</button></div>
+      <div class="mv-tree" id="mvTree" role="listbox" aria-label="${esc(t('choose_folder'))}"></div>
+      <div class="mv-dest" id="mvDest"></div>
+      <div class="modal-foot"><button class="btn ghost" id="mvCancel">${esc(t('cancel'))}</button><button class="btn primary" id="mvGo">${esc(t('move'))}</button></div>`, { wide: true });
+
+    const treeEl = document.getElementById('mvTree'), destEl = document.getElementById('mvDest');
+    const clientOf = (id) => S.clients.find((c) => c.id === id);
+
+    async function loadTree(force) {
+      treeEl.innerHTML = `<div class="muted mv-loading">${esc(t('loading'))}…</div>`;
       try {
-        await UI.api('/admin/files/' + f.id, { method: 'PUT', body: {
-          client_id: +document.getElementById('mvClient').value,
-          folder: document.getElementById('mvFolder').value.trim(),
-          inbox: 0,
-        } });
-        UI.closeModal(); UI.toast(t('moved'), 'ok');
-        if (after) after();
-        else {
-          await Promise.all([loadStats(), loadClients()]);
-          render();
-          if (S.folderView) refreshFolder();
-        }
-      } catch (e) { UI.errToast(e); }
+        if (force || !cache.has(state.clientId)) cache.set(state.clientId, (await UI.api('/admin/client-folders/' + state.clientId, { csrf: false, busy: false })).folderTree || []);
+        state.tree = cache.get(state.clientId);
+      } catch (e) { state.tree = []; UI.errToast(e); }
+      drawTree();
+    }
+
+    function drawTree() {
+      const byId = new Map(state.tree.map((f) => [Number(f.id), f]));
+      const depth = (f) => { let d = 0, cur = f; while (cur && cur.parent_id != null) { cur = byId.get(Number(cur.parent_id)); d++; } return d; };
+      const node = (id, d, icon, label, count) => `<button type="button" class="mv-node ${String(state.folderId || '') === String(id) ? 'selected' : ''}" role="option" data-folder="${id}" style="--d:${d}"><span class="mv-ico">${icon}</span><span class="mv-label">${esc(label)}</span>${count != null ? `<small class="muted">${count}</small>` : ''}</button>`;
+      treeEl.innerHTML = node('', 0, homeIcon, t('main_folder'), null)
+        + state.tree.map((f) => node(f.id, depth(f) + 1, folderIcon, f.name, f.file_count)).join('')
+        + (state.tree.length ? '' : `<div class="muted mv-empty">${esc(t('no_folders_yet'))}</div>`);
+      treeEl.querySelectorAll('.mv-node').forEach((b) => (b.onclick = () => { state.folderId = b.dataset.folder ? +b.dataset.folder : null; drawTree(); }));
+      const sel = treeEl.querySelector('.mv-node.selected'); if (sel) sel.scrollIntoView({ block: 'nearest' });
+      const f = state.folderId ? byId.get(state.folderId) : null;
+      const parts = [cname(clientOf(state.clientId) || { name: '' }), ...(f ? String(f.folder_path).split(' / ') : [t('main_folder')])];
+      destEl.innerHTML = `<span class="muted">${esc(t('move_to'))}</span> ${parts.map((x) => `<b dir="auto">${esc(x)}</b>`).join('<span class="mv-sep">›</span>')}`;
+    }
+
+    document.getElementById('mvClient').onchange = (e) => { state.clientId = +e.target.value; state.folderId = null; loadTree(); };
+    document.getElementById('mvCancel').onclick = () => UI.closeModal();
+
+    const newBox = document.getElementById('mvNew'), newBtn = document.getElementById('mvNewBtn');
+    if (newBtn) {
+      newBtn.onclick = () => { newBox.hidden = false; document.getElementById('mvNewName').focus(); };
+      document.getElementById('mvNewCancel').onclick = () => { newBox.hidden = true; };
+      const create = async () => {
+        const input = document.getElementById('mvNewName'), name = input.value.trim(); if (!name) return;
+        try {
+          const r = await UI.api(`/admin/clients/${state.clientId}/folders`, { method: 'POST', body: { name, parent_id: state.folderId }, loadingMessage: t('saving') });
+          input.value = ''; newBox.hidden = true;
+          state.folderId = r.folder.id;
+          await loadTree(true);
+        } catch (e) { UI.errToast(e); }
+      };
+      document.getElementById('mvNewOk').onclick = create;
+      document.getElementById('mvNewName').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
+    }
+
+    document.getElementById('mvGo').onclick = async () => {
+      const btn = document.getElementById('mvGo'); btn.disabled = true;
+      try {
+        const r = await UI.api('/admin/files/move', { method: 'POST', body: { file_ids: files.map((f) => f.id), client_id: state.clientId, folder_id: state.folderId }, loadingMessage: t('moving') });
+        UI.closeModal();
+        const failed = (r.failed || []).length;
+        if (r.moved) UI.toast(t('moved_n').replace('{n}', r.moved), 'ok');
+        if (failed) UI.toast(t('move_failed_n').replace('{n}', failed), 'err');
+        files.forEach((f) => S.selectedFiles.delete(f.id));
+        if (after) await after();
+        else { await Promise.all([loadStats(), loadClients()]); render(); if (S.folderView) refreshFolder(); }
+      } catch (e) { btn.disabled = false; UI.errToast(e); }
     };
+
+    loadTree();
   }
 
   async function delFile(f, after) {
