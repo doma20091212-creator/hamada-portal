@@ -24,6 +24,8 @@
     groups: [],
     clientGroupFilter: '', // '' = all, 'base' = ungrouped, else numeric group id (string)
     msgThreads: [],
+    clientView: 'companies', // or 'portfolios'
+    portfolios: [],
     msgClientId: null,   // conversation open in the Messages tab
     msgView: null,       // {client, messages}
   };
@@ -38,6 +40,8 @@
     document.getElementById('addClientBtn').onclick = () => clientFormModal(null);
     const addAdmin = document.getElementById('addAdminBtn'); if (addAdmin) addAdmin.onclick = () => adminFormModal(null);
     const saveSettings = document.getElementById('saveSettingsBtn'); if (saveSettings) saveSettings.onclick = saveSettingsForm;
+    document.querySelectorAll('#clientViewSeg [data-view]').forEach((b) => (b.onclick = () => setClientView(b.dataset.view)));
+    const addPortfolio = document.getElementById('addPortfolioBtn'); if (addPortfolio) addPortfolio.onclick = () => portfolioFormModal(null);
     const addGroup = document.getElementById('addGroupBtn'); if (addGroup) addGroup.onclick = () => groupFormModal(null);
     const discardAll = document.getElementById('discardAllBtn'); if (discardAll) { discardAll.hidden = !has('delete_files'); discardAll.onclick = discardAllInbox; }
     await loadProfile();
@@ -52,7 +56,7 @@
   }
 
   async function refreshAll() {
-    await Promise.all([loadStats(), loadClients(), loadGroups()]);
+    await Promise.all([loadStats(), loadClients(), loadGroups(), loadPortfolios()]);
     render();
   }
 
@@ -75,7 +79,7 @@
   function render() {
     document.getElementById('pageTitle').textContent = TAB_TITLE();
     document.querySelectorAll('.tab').forEach((s) => (s.hidden = s.id !== 'tab-' + S.tab));
-    if (S.tab === 'clients') renderClients();
+    if (S.tab === 'clients') { renderClients(); renderPortfolios(); }
     if (S.tab === 'inbox') renderInbox();
     if (S.tab === 'messages') renderMessages();
     if (S.tab === 'files') loadAllFiles();
@@ -98,6 +102,7 @@
       const settingsNav = document.getElementById('settingsNav'); if (settingsNav) settingsNav.hidden = !owner && !S.profile.permissions.includes('settings') && !S.profile.permissions.includes('manage_groups');
       const canManageClients = owner || S.profile.permissions.includes('manage_clients');
     const addClient = document.getElementById('addClientBtn'); if (addClient) addClient.hidden = !canManageClients;
+    const seg = document.getElementById('clientViewSeg'); if (seg) seg.hidden = !canManageClients;
     } catch (e) { UI.errToast(e); }
   }
 
@@ -147,6 +152,103 @@
   async function loadSettings(){if(!has('settings'))return;try{const d=await UI.api('/settings');const x=d.settings||{};setNameEn.value=x['brand.name_en']||'';setNameAr.value=x['brand.name_ar']||'';setTagEn.value=x['brand.tagline_en']||'';setTagAr.value=x['brand.tagline_ar']||'';}catch(e){UI.errToast(e);}}
   async function saveSettingsForm(){try{await UI.api('/settings',{method:'PUT',body:{'brand.name_en':setNameEn.value.trim(),'brand.name_ar':setNameAr.value.trim(),'brand.tagline_en':setTagEn.value.trim(),'brand.tagline_ar':setTagAr.value.trim()}});UI.toast(t('saved'),'ok');}catch(e){UI.errToast(e);}}
   async function loadAudit(){const tEl=document.getElementById('auditTbl');if(!tEl||!has('settings'))return;try{const d=await UI.api('/admin/audit');tEl.innerHTML=`<thead><tr><th>${esc(t('date'))}</th><th>${esc(t('name'))}</th><th>${esc(t('actions'))}</th><th>${esc(t('file'))}</th></tr></thead><tbody>${(d.logs||[]).map(x=>`<tr><td class="cell-sub">${esc(window.I18N.fmtDate(x.created_at))}</td><td>${esc(x.actor_name||'System')}</td><td>${esc(x.action)}</td><td>${esc(x.entity_type)} ${esc(x.entity_id||'')}</td></tr>`).join('')}</tbody>`;}catch(e){UI.errToast(e);}}
+
+  /* ------------------------- multi-company accounts -------------------------- */
+  async function loadPortfolios() {
+    if (!has('manage_clients')) { S.portfolios = []; return; }
+    try { S.portfolios = (await UI.api('/admin/portfolios', { csrf: false })).portfolios || []; }
+    catch (e) { S.portfolios = []; }
+  }
+  const portfoliosOf = (clientId) => S.portfolios.filter((p) => p.companies.some((c) => c.id === clientId));
+
+  function setClientView(view) {
+    S.clientView = view;
+    document.querySelectorAll('#clientViewSeg [data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+    document.getElementById('companiesPanel').hidden = view !== 'companies';
+    document.getElementById('portfoliosPanel').hidden = view !== 'portfolios';
+    if (view === 'portfolios') loadPortfolios().then(renderPortfolios);
+  }
+
+  function renderPortfolios() {
+    const tbl = document.getElementById('portfoliosTbl'), empty = document.getElementById('portfoliosEmpty');
+    if (!tbl) return;
+    if (!S.portfolios.length) { tbl.innerHTML = ''; empty.hidden = false; empty.textContent = t('no_portfolios'); return; }
+    empty.hidden = true;
+    tbl.innerHTML = `<thead><tr><th>${esc(t('name'))}</th><th>${esc(t('contact'))}</th><th>${esc(t('companies_view'))}</th><th>${esc(t('status'))}</th><th></th></tr></thead><tbody>${S.portfolios.map((p) => `
+      <tr data-id="${p.id}">
+        <td><div class="cell-main">${esc(cname(p))}</div>${p.name_ar && cname(p) === p.name ? `<div class="cell-sub">${esc(p.name_ar)}</div>` : ''}</td>
+        <td><div>${esc(p.email)}</div><div class="cell-sub">${esc(p.phone)}</div></td>
+        <td><div class="company-chips">${p.companies.map((c) => `<span class="tag ${c.active ? 'gold' : 'red'}">${esc(cname(c))}</span>`).join('')}</div><div class="cell-sub">${p.companies.length} ${esc(t('companies_count'))}</div></td>
+        <td>${p.active ? `<span class="tag green">${esc(t('active_status'))}</span>` : `<span class="tag red">${esc(t('disabled_status'))}</span>`}</td>
+        <td><div class="row-actions">
+          <button class="iconbtn" data-act="edit" title="${esc(t('edit'))}">${UI.icon('pencil')}</button>
+          <button class="iconbtn" data-act="reset" title="${esc(t('reset_password'))}">${UI.icon('key')}</button>
+          <button class="iconbtn danger" data-act="del" title="${esc(t('remove'))}">${UI.icon('trash')}</button>
+        </div></td>
+      </tr>`).join('')}</tbody>`;
+    tbl.querySelectorAll('[data-act]').forEach((b) => (b.onclick = async () => {
+      const p = S.portfolios.find((x) => x.id === +b.closest('tr').dataset.id); if (!p) return;
+      if (b.dataset.act === 'edit') portfolioFormModal(p);
+      if (b.dataset.act === 'reset') {
+        if (!(await UI.confirmBox(`${esc(cname(p))} — ${esc(t('reset_password'))}?`, false))) return;
+        try { const r = await UI.api(`/admin/portfolios/${p.id}/reset`, { method: 'POST', body: {} }); infoModal(t('reset_done'), `<b>${esc(r.initial_password)}</b>`); } catch (e) { UI.errToast(e); }
+      }
+      if (b.dataset.act === 'del') {
+        if (!(await UI.confirmBox(`${t('delete_portfolio_confirm')} (${esc(cname(p))})`))) return;
+        try { await UI.api('/admin/portfolios/' + p.id, { method: 'DELETE' }); UI.toast(t('deleted'), 'ok'); await loadPortfolios(); renderPortfolios(); renderClients(); } catch (e) { UI.errToast(e); }
+      }
+    }));
+  }
+
+  function portfolioFormModal(p) {
+    const isEdit = !!p;
+    const chosen = new Set(isEdit ? p.companies.map((c) => c.id) : []);
+    const groups = S.groups.filter((g) => (g.client_ids || []).length);
+    UI.openModal(`
+      <h2>${esc(isEdit ? t('edit_portfolio') : t('new_portfolio'))}</h2>
+      <p class="sub">${esc(t('portfolios_hint'))}</p>
+      <div class="grid2">
+        <label class="field"><span>${esc(t('owner_name_en'))}</span><input class="input" id="pfName" maxlength="120" value="${isEdit ? esc(p.name) : ''}"></label>
+        <label class="field"><span>${esc(t('owner_name_ar'))}</span><input class="input" id="pfNameAr" dir="rtl" maxlength="120" value="${isEdit ? esc(p.name_ar || '') : ''}"></label>
+        <label class="field"><span>${esc(t('email'))}</span><input class="input" id="pfEmail" type="email" maxlength="254" value="${isEdit ? esc(p.email) : ''}"></label>
+        <label class="field"><span>${esc(t('phone'))}</span><input class="input" id="pfPhone" dir="ltr" maxlength="20" placeholder="01xxxxxxxxx" value="${isEdit ? esc(p.phone) : ''}"></label>
+        <label class="field"><span>${esc(isEdit ? t('new_password_optional') : t('initial_password'))}</span><input class="input" id="pfPw" type="text" minlength="8" maxlength="120" autocomplete="off"></label>
+        ${isEdit ? `<label class="check" style="align-self:end;padding-bottom:.7rem"><input type="checkbox" id="pfActive" ${p.active ? 'checked' : ''}> ${esc(t('active'))}</label>` : `<p class="muted" style="align-self:end">${esc(t('initial_password_hint'))}</p>`}
+      </div>
+      <div class="perm-section-head"><h3>${esc(t('linked_companies'))} <span class="muted" id="pfCount"></span></h3>
+        <div class="search small"><input class="input plain" id="pfSearch" placeholder="${esc(t('search_clients'))}" autocomplete="off"></div></div>
+      ${groups.length ? `<div class="folder-chips pf-groups"><span class="muted">${esc(t('add_whole_group'))}</span>${groups.map((g) => `<button type="button" class="fchip" data-group="${g.id}">+ ${esc(g.name)} <span class="muted folder-count">${g.client_ids.length}</span></button>`).join('')}</div>` : ''}
+      <div class="client-check-list pf-list" id="pfList"></div>
+      <div class="form-error" id="pfErr" hidden></div>
+      <div class="modal-foot"><button class="btn ghost" id="pfCancel">${esc(t('cancel'))}</button><button class="btn primary" id="pfSave">${esc(isEdit ? t('save') : t('create'))}</button></div>`, { wide: true });
+
+    const list = document.getElementById('pfList'), count = document.getElementById('pfCount'), err = document.getElementById('pfErr');
+    let q = '';
+    const drawList = () => {
+      const rows = S.clients.filter((c) => UI.searchMatch([c.name, c.name_ar, c.email, c.phone, c.group_name], q));
+      list.innerHTML = rows.length ? rows.map((c) => `<label class="check client-check ${chosen.has(c.id) ? 'on' : ''}"><input type="checkbox" data-cid="${c.id}" ${chosen.has(c.id) ? 'checked' : ''}> <span>${esc(cname(c))}${c.group_name ? ` <small class="muted">· ${esc(c.group_name)}</small>` : ''}</span></label>`).join('') : `<span class="muted">${esc(t('no_clients'))}</span>`;
+      list.querySelectorAll('[data-cid]').forEach((cb) => (cb.onchange = () => { cb.checked ? chosen.add(+cb.dataset.cid) : chosen.delete(+cb.dataset.cid); cb.closest('label').classList.toggle('on', cb.checked); count.textContent = `(${chosen.size})`; }));
+      count.textContent = `(${chosen.size})`;
+    };
+    drawList();
+    document.getElementById('pfSearch').addEventListener('input', (e) => { q = e.target.value; drawList(); });
+    document.querySelectorAll('[data-group]').forEach((b) => (b.onclick = () => { const g = S.groups.find((x) => x.id === +b.dataset.group); (g.client_ids || []).forEach((id) => chosen.add(id)); drawList(); }));
+    document.getElementById('pfCancel').onclick = () => UI.closeModal();
+    document.getElementById('pfSave').onclick = async () => {
+      err.hidden = true;
+      const body = { name: pfName.value.trim(), name_ar: pfNameAr.value.trim(), email: pfEmail.value.trim(), phone: pfPhone.value.trim(), client_ids: [...chosen] };
+      const pw = pfPw.value.trim(); if (pw) body.password = pw;
+      if (isEdit) body.active = pfActive.checked ? 1 : 0;
+      if (!chosen.size) { err.textContent = t('err_pick_companies'); err.hidden = false; return; }
+      try {
+        const r = await UI.api(isEdit ? '/admin/portfolios/' + p.id : '/admin/portfolios', { method: isEdit ? 'PUT' : 'POST', body });
+        UI.closeModal();
+        await loadPortfolios(); renderPortfolios(); renderClients();
+        if (isEdit) UI.toast(t('saved'), 'ok');
+        else infoModal(t('portfolio_created'), `${esc(t('login_with'))} <b>${esc(body.email)}</b><br>${esc(t('initial_password'))}: <b>${esc(r.initial_password)}</b>`);
+      } catch (e) { err.textContent = t('err_' + (e.code || 'server_error')); err.hidden = false; }
+    };
+  }
 
   /* --------------------------------- stats ---------------------------------- */
   async function loadStats() {
@@ -206,7 +308,7 @@
         <tr data-id="${c.id}">
           <td class="select-col"><input type="checkbox" class="client-select" data-client-select="${c.id}" ${S.selectedClients.has(c.id)?'checked':''}></td>
           <td>
-            <div class="cell-main">${esc(cname(c))} ${c.active ? '' : `<span class="tag red">${esc(t('disabled'))}</span>`} ${c.group_name ? `<span class="tag gold">${esc(c.group_name)}</span>` : ''}</div>
+            <div class="cell-main">${esc(cname(c))} ${c.active ? '' : `<span class="tag red">${esc(t('disabled'))}</span>`} ${c.group_name ? `<span class="tag gold">${esc(c.group_name)}</span>` : ''} ${portfoliosOf(c.id).map((p) => `<span class="tag blue" title="${esc(t('portfolios_view'))}">${esc(cname(p))}</span>`).join(' ')}</div>
             ${c.name_ar && cname(c) === c.name ? `<div class="cell-sub">${esc(c.name_ar)}</div>` : ''}
           </td>
           <td><div>${esc(c.email)}</div><div class="cell-sub">${esc(c.phone)}</div></td>

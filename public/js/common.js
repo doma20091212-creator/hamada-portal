@@ -111,8 +111,8 @@
     if (first) setTimeout(() => first.focus(), 50);
     if (Motion && !reduceMotion) {
       box.style.animation = 'none';
-      Motion.animate(wrap, { opacity: [0, 1] }, { duration: 0.18, easing: 'ease-out' });
-      Motion.animate(box, { opacity: [0, 1], y: [10, 0], scale: [0.97, 1] }, { type: 'spring', stiffness: 420, damping: 34 });
+      Motion.animate(wrap, { opacity: [0, 1] }, { duration: 0.3, ease: 'easeOut' });
+      Motion.animate(box, { opacity: [0, 1], y: [14, 0], scale: [0.98, 1] }, { duration: 0.45, ease: [0.16, 1, 0.3, 1] });
     }
     return entry;
   }
@@ -130,8 +130,8 @@
     e.box.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
     const finish = () => { e.wrap.remove(); if (e.onClose) e.onClose(); };
     if (Motion && !reduceMotion) {
-      Motion.animate(e.box, { opacity: [1, 0], y: [0, 8], scale: [1, 0.97] }, { duration: 0.16, easing: [0.4, 0, 1, 1] });
-      const backdrop = Motion.animate(e.wrap, { opacity: [1, 0] }, { duration: 0.16, easing: 'ease-in' });
+      Motion.animate(e.box, { opacity: [1, 0], y: [0, 8], scale: [1, 0.97] }, { duration: 0.16, ease: [0.4, 0, 1, 1] });
+      const backdrop = Motion.animate(e.wrap, { opacity: [1, 0] }, { duration: 0.16, ease: 'easeIn' });
       (backdrop.finished || Promise.resolve()).then(finish).catch(finish);
     } else {
       finish();
@@ -173,7 +173,7 @@
     }
     setTimeout(() => {
       if (Motion && !reduceMotion) {
-        const a = Motion.animate(el, { opacity: [1, 0], y: [0, -8] }, { duration: 0.25, easing: 'ease-in' });
+        const a = Motion.animate(el, { opacity: [1, 0], y: [0, -8] }, { duration: 0.25, ease: 'easeIn' });
         (a.finished || Promise.resolve()).then(() => el.remove()).catch(() => el.remove());
       } else {
         el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320);
@@ -188,8 +188,11 @@
   async function bootInto(requireRole) {
     const s = await api('/session', { csrf: false });
     if (!s.user) { location.href = '/'; throw 'no-session'; }
-    if (requireRole && s.user.role !== requireRole) { location.href = s.user.role === 'admin' ? '/admin' : '/client'; throw 'wrong-role'; }
+    // A multi-company owner uses the client page (company picker first, then that company's view).
+    const roleOk = !requireRole || s.user.role === requireRole || (requireRole === 'client' && s.user.role === 'portfolio');
+    if (!roleOk) { location.href = s.user.role === 'admin' ? '/admin' : '/client'; throw 'wrong-role'; }
     APP.user = s.user;
+    APP.portfolio = s.portfolio || null;
     APP.csrf = s.csrf;
     if (s.user.must_change) forcePasswordModal();
     const who = document.getElementById('whoName'); if (who) who.textContent = s.user.name;

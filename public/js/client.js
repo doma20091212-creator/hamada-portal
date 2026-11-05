@@ -18,9 +18,28 @@
     try { await UI.boot('client'); } catch { return; }
     UI.bindTopActions();
     await UI.loadBrand();
+    // Multi-company owner who has not picked a company yet: show the picker only.
+    if (window.APP.user.role === 'portfolio') { UI.finishPageLoad && UI.finishPageLoad(); window.Portfolio.open(); return; }
+    if (window.APP.portfolio) setupCompanySwitch();
     await refresh();
     state.ready = true;
-    window.__onLangChange = () => { UI.loadBrand(); render(); renderSent(); renderPending(); };
+    window.__onLangChange = () => { UI.loadBrand(); render(); renderSent(); renderPending(); labelCompanySwitch(); };
+  }
+
+  function setupCompanySwitch() {
+    const btn = document.getElementById('companySwitch'); if (!btn) return;
+    btn.hidden = false;
+    document.body.classList.add('has-company-switch');
+    btn.onclick = () => window.Portfolio.open({ closable: true });
+    labelCompanySwitch();
+  }
+  function labelCompanySwitch() {
+    const u = window.APP.user, owner = window.APP.portfolio; if (!owner) return;
+    const ar = window.I18N.lang === 'ar';
+    document.getElementById('csName').textContent = ar && u.name_ar ? u.name_ar : u.name;
+    document.getElementById('csMono').textContent = String(u.name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+    const v = document.getElementById('pfViewing');
+    if (v) { v.hidden = false; v.textContent = `${t('viewing_as')} ${ar && owner.name_ar ? owner.name_ar : owner.name}`; }
   }
 
   async function refresh() {

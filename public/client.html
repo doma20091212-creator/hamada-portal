@@ -38,6 +38,11 @@
       </div>
     </div>
     <div class="cli-actions">
+      <button class="company-switch" id="companySwitch" type="button" hidden>
+        <span class="cs-mono" id="csMono" aria-hidden="true"></span>
+        <span class="cs-text"><small data-i18n="switch_company">Switch company</small><b id="csName"></b></span>
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M7 10l5 5 5-5H7Z"/></svg>
+      </button>
       <button class="btn ghost sm" id="langBtn"><span id="langBtnText">العربية</span></button>
       <button class="btn ghost sm" id="pwBtn" data-i18n="change_password">Change password</button>
       <button class="btn ghost sm" id="logoutBtn" data-i18n="logout">Log out</button>
@@ -48,6 +53,7 @@
     <section class="cli-hero card">
       <div>
         <h1><span data-i18n="welcome">Welcome</span>, <span id="meName">—</span></h1>
+        <p class="pf-viewing muted" id="pfViewing" hidden></p>
         <p class="muted" data-i18n="cli_hint">Your private folder — only you and the office can see these files.</p>
       </div>
       <div class="cli-stats">
@@ -100,6 +106,7 @@
   <script src="/js/i18n.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/motion-effects.js"></script>
+  <script src="/js/portfolio.js"></script>
   <script src="/js/client.js"></script>
 </body>
 </html>

@@ -273,13 +273,31 @@ app.use(
 
 app.use(async (req, res, next) => {
   req.user = null;
+  req.actor = null; // the multi-company owner, when one is signed in
   if (req.session && req.session.uid) {
     const u = await db.get(`SELECT id, role, name, name_ar, email, phone, must_change, active, is_owner FROM users WHERE id=$1`, [req.session.uid]);
-    if (u && u.active) req.user = u;
+    if (u && u.active) {
+      req.user = u;
+      if (u.role === 'portfolio') {
+        req.actor = u;
+        // With a company chosen, the owner acts as that company's client account, so every
+        // existing client route works unchanged and stays scoped to that one company.
+        const cid = parseInt(req.session.company, 10);
+        const c = cid ? await portfolioCompany(u.id, cid) : null;
+        if (c) req.user = { ...c, must_change: u.must_change, is_owner: 0 };
+        else if (req.session.company) req.session.company = null;
+      }
+    }
     else req.session = null;
   }
   next();
 });
+
+async function portfolioCompany(portfolioId, clientId) {
+  return db.get(`SELECT u.id, u.role, u.name, u.name_ar, u.email, u.phone, u.must_change, u.active, u.is_owner
+                 FROM portfolio_clients p JOIN users u ON u.id=p.client_id
+                 WHERE p.portfolio_id=$1 AND p.client_id=$2 AND u.role='client' AND u.active=1`, [portfolioId, clientId]);
+}
 
 app.use('/api', (req, res, next) => {
   if (['GET','HEAD','OPTIONS'].includes(req.method) || req.path === '/login' || req.path === '/session') return next();
@@ -305,6 +323,8 @@ function pubUser(u) {
   if (!u) return null;
   return { id: u.id, role: u.role, name: u.name, name_ar: u.name_ar, email: u.email, phone: u.phone, must_change: !!u.must_change, is_owner: !!u.is_owner };
 }
+// The signed-in person behind the session: the owner for multi-company accounts.
+const sessionPerson = (req) => req.actor || req.user;
 
 async function requirePermission(req, res, permission, clientId) {
   if (!req.user || req.user.role !== 'admin') return false;
@@ -345,6 +365,7 @@ app.post('/api/login', async (req, res) => {
 
   attempts.delete(ip);
   req.session.uid = u.id;
+  req.session.company = null;
   req.session.csrf = crypto.randomBytes(24).toString('hex');
   res.json({ user: pubUser(u), csrf: req.session.csrf });
 });
@@ -352,7 +373,7 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/session', (req, res) => {
   if (!req.user) return res.json({ user: null });
   if (!req.session.csrf) req.session.csrf = crypto.randomBytes(24).toString('hex');
-  res.json({ user: pubUser(req.user), csrf: req.session.csrf });
+  res.json({ user: pubUser(req.user), portfolio: req.actor ? pubUser(req.actor) : null, csrf: req.session.csrf });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -362,16 +383,47 @@ app.post('/api/logout', (req, res) => {
 
 app.post('/api/password', requireAuth, async (req, res) => {
   const { current = '', next: np = '' } = req.body || {};
-  const me = await db.get(`SELECT password_hash FROM users WHERE id=$1`, [req.user.id]);
+  const person = sessionPerson(req);
+  const me = await db.get(`SELECT password_hash FROM users WHERE id=$1`, [person.id]);
   if (!bcrypt.compareSync(String(current), me.password_hash)) return res.status(400).json({ error: 'bad_current' });
   if (String(np).length < 8) return res.status(400).json({ error: 'weak_password' });
   if (String(np) === String(current)) return res.status(400).json({ error: 'same_password' });
 
-  await db.run(`UPDATE users SET password_hash=$1, must_change=0 WHERE id=$2`, [bcrypt.hashSync(String(np), 10), req.user.id]);
+  await db.run(`UPDATE users SET password_hash=$1, must_change=0 WHERE id=$2`, [bcrypt.hashSync(String(np), 10), person.id]);
   res.json({ ok: true });
 });
 
 app.get('/api/brand', async (req, res) => { const rows=await db.all(`SELECT key,value FROM portal_settings WHERE key LIKE 'brand.%'`); const out={...(CONFIG.brand||{})}; for(const r of rows){const k=r.key.split('.')[1]; if(k) out[k]=r.value;} res.json(out); });
+
+/* ---------------------------- multi-company owner ---------------------------- */
+function requirePortfolio(req, res, next) {
+  if (!req.actor) return res.status(403).json({ error: 'forbidden' });
+  next();
+}
+
+app.get('/api/portfolio/companies', requirePortfolio, async (req, res) => {
+  const companies = await db.all(`
+    SELECT u.id, u.name, u.name_ar,
+           (SELECT COUNT(*)::int FROM files f WHERE f.client_id=u.id AND f.inbox=0) AS nfiles,
+           (SELECT MAX(f.created_at) FROM files f WHERE f.client_id=u.id AND f.inbox=0) AS last_file_at
+    FROM portfolio_clients p JOIN users u ON u.id=p.client_id
+    WHERE p.portfolio_id=$1 AND u.role='client' AND u.active=1
+    ORDER BY u.name`, [req.actor.id]);
+  res.json({ owner: pubUser(req.actor), active_company: req.user.role === 'client' ? req.user.id : null, companies });
+});
+
+app.post('/api/portfolio/select', requirePortfolio, async (req, res) => {
+  const cid = parseInt(req.body && req.body.client_id, 10);
+  const c = cid ? await portfolioCompany(req.actor.id, cid) : null;
+  if (!c) return res.status(404).json({ error: 'not_found' });
+  req.session.company = c.id;
+  res.json({ ok: true, company: pubUser(c) });
+});
+
+app.post('/api/portfolio/leave', requirePortfolio, (req, res) => {
+  req.session.company = null;
+  res.json({ ok: true });
+});
 
 /* --------------------------------- client ----------------------------------- */
 app.get('/api/me', requireClient, async (req, res) => {
@@ -1083,6 +1135,114 @@ app.post('/api/chat/:clientId', requireAuth, async (req,res)=>{
   const cid=parseInt(req.params.clientId,10); if(req.user.role==='client' && cid!==req.user.id)return res.status(403).json({error:'forbidden'}); if(req.user.role==='admin' && !(await requirePermission(req,res,'chat',cid)))return res.status(403).json({error:'permission_denied'});
   const message=U.sanitizeName(req.body?.message||'',1000); if(!message)return res.status(400).json({error:'empty_message'});
   const r=await db.run(`INSERT INTO chat_messages(client_id,sender_id,sender_role,message) VALUES($1,$2,$3,$4) RETURNING id,created_at`,[cid,req.user.id,req.user.role,message]); await audit(req,'chat_message','client',cid,{}); res.json({ok:true,message:{id:r.rows[0].id,created_at:r.rows[0].created_at}});
+});
+
+/* --------------------------- multi-company accounts --------------------------- */
+// Managed by admins who can manage clients. A non-owner admin only sees and links
+// companies inside their own client access.
+async function adminClientScope(req) {
+  if (await isOwner(db, req.user.id)) return null; // null = every client
+  const rows = await db.all(`SELECT client_id FROM admin_client_access WHERE admin_id=$1 AND starts_at <= NOW() AND (expires_at IS NULL OR expires_at > NOW())`, [req.user.id]);
+  return new Set(rows.map((r) => r.client_id));
+}
+const inScope = (scope, ids) => !scope || ids.every((id) => scope.has(id));
+
+async function cleanCompanyIds(raw) {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).map((x) => parseInt(x, 10)).filter((x) => x > 0))];
+  if (!ids.length) return [];
+  const rows = await db.all(`SELECT id FROM users WHERE role='client' AND id=ANY($1::int[])`, [ids]);
+  return rows.map((r) => r.id);
+}
+
+async function portfolioRow(id) {
+  return db.get(`SELECT id, name, name_ar, email, phone, active, must_change, created_at FROM users WHERE id=$1 AND role='portfolio'`, [id]);
+}
+async function portfolioLinks(id) {
+  return (await db.all(`SELECT client_id FROM portfolio_clients WHERE portfolio_id=$1`, [id])).map((r) => r.client_id);
+}
+async function setPortfolioLinks(id, clientIds) {
+  await db.run(`DELETE FROM portfolio_clients WHERE portfolio_id=$1`, [id]);
+  if (clientIds.length) await db.run(`INSERT INTO portfolio_clients(portfolio_id, client_id) SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING`, [id, clientIds]);
+}
+
+app.get('/api/admin/portfolios', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const scope = await adminClientScope(req);
+  const rows = await db.all(`SELECT id, name, name_ar, email, phone, active, must_change, created_at FROM users WHERE role='portfolio' ORDER BY name`);
+  const links = await db.all(`SELECT p.portfolio_id, u.id, u.name, u.name_ar, u.active FROM portfolio_clients p JOIN users u ON u.id=p.client_id ORDER BY u.name`);
+  const out = rows.map((r) => ({ ...r, companies: links.filter((l) => l.portfolio_id === r.id).map(({ portfolio_id, ...c }) => c) }))
+    .filter((r) => inScope(scope, r.companies.map((c) => c.id)));
+  res.json({ portfolios: out });
+});
+
+app.post('/api/admin/portfolios', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const { name, name_ar = '', email, phone, password, client_ids } = req.body || {};
+  const sName = U.sanitizeName(name, 120), sAr = U.sanitizeName(name_ar, 120);
+  const sEmail = String(email || '').trim().toLowerCase(), sPhone = U.normalizePhone(phone);
+  if (!sName || !U.validEmail(sEmail) || sPhone.length < 8) return res.status(400).json({ error: 'invalid_client_data' });
+  const ids = await cleanCompanyIds(client_ids);
+  if (!ids.length) return res.status(400).json({ error: 'pick_companies' });
+  if (!inScope(await adminClientScope(req), ids)) return res.status(403).json({ error: 'permission_denied' });
+  const dup = await db.get(`SELECT id FROM users WHERE lower(email)=$1 OR phone=$2`, [sEmail, sPhone]);
+  if (dup) return res.status(409).json({ error: 'email_or_phone_exists' });
+  if (password && String(password).length < 8) return res.status(400).json({ error: 'weak_password' });
+  const tempPw = password ? String(password) : sPhone;
+  const r = await db.run(`INSERT INTO users (role, name, name_ar, email, phone, password_hash, must_change, active) VALUES ('portfolio',$1,$2,$3,$4,$5,1,1) RETURNING id`, [sName, sAr, sEmail, sPhone, bcrypt.hashSync(tempPw, 10)]);
+  const id = r.rows[0].id;
+  await setPortfolioLinks(id, ids);
+  await audit(req, 'portfolio_created', 'portfolio', id, { companies: ids });
+  res.json({ ok: true, id, initial_password: tempPw, used_phone_as_password: !password });
+});
+
+app.put('/api/admin/portfolios/:id', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const id = parseInt(req.params.id, 10);
+  const p = await portfolioRow(id); if (!p) return res.status(404).json({ error: 'not_found' });
+  const scope = await adminClientScope(req);
+  if (!inScope(scope, await portfolioLinks(id))) return res.status(403).json({ error: 'permission_denied' });
+  const b = req.body || {};
+  const sName = b.name !== undefined ? U.sanitizeName(b.name, 120) : p.name;
+  const sAr = b.name_ar !== undefined ? U.sanitizeName(b.name_ar, 120) : p.name_ar;
+  const sEmail = b.email !== undefined ? String(b.email).trim().toLowerCase() : p.email;
+  const sPhone = b.phone !== undefined ? U.normalizePhone(b.phone) : p.phone;
+  const sActive = b.active !== undefined ? (b.active ? 1 : 0) : p.active;
+  if (!sName || !U.validEmail(sEmail) || sPhone.length < 8) return res.status(400).json({ error: 'invalid_data' });
+  const dup = await db.get(`SELECT id FROM users WHERE (lower(email)=$1 OR phone=$2) AND id<>$3`, [sEmail, sPhone, id]);
+  if (dup) return res.status(409).json({ error: 'email_or_phone_exists' });
+  let ids = null;
+  if (b.client_ids !== undefined) {
+    ids = await cleanCompanyIds(b.client_ids);
+    if (!ids.length) return res.status(400).json({ error: 'pick_companies' });
+    if (!inScope(scope, ids)) return res.status(403).json({ error: 'permission_denied' });
+  }
+  if (b.password && String(b.password).length < 8) return res.status(400).json({ error: 'weak_password' });
+  await db.run(`UPDATE users SET name=$1, name_ar=$2, email=$3, phone=$4, active=$5 WHERE id=$6`, [sName, sAr, sEmail, sPhone, sActive, id]);
+  if (b.password) await db.run(`UPDATE users SET password_hash=$1, must_change=1 WHERE id=$2`, [bcrypt.hashSync(String(b.password), 10), id]);
+  if (ids) await setPortfolioLinks(id, ids);
+  await audit(req, 'portfolio_updated', 'portfolio', id, ids ? { companies: ids } : {});
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/portfolios/:id/reset', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const id = parseInt(req.params.id, 10);
+  const p = await portfolioRow(id); if (!p) return res.status(404).json({ error: 'not_found' });
+  if (!inScope(await adminClientScope(req), await portfolioLinks(id))) return res.status(403).json({ error: 'permission_denied' });
+  await db.run(`UPDATE users SET password_hash=$1, must_change=1 WHERE id=$2`, [bcrypt.hashSync(p.phone, 10), id]);
+  await audit(req, 'portfolio_password_reset', 'portfolio', id, {});
+  res.json({ ok: true, initial_password: p.phone });
+});
+
+app.delete('/api/admin/portfolios/:id', requireAdmin, async (req, res) => {
+  if (!(await requirePermission(req, res, 'manage_clients'))) return res.status(403).json({ error: 'permission_denied' });
+  const id = parseInt(req.params.id, 10);
+  const p = await portfolioRow(id); if (!p) return res.status(404).json({ error: 'not_found' });
+  if (!inScope(await adminClientScope(req), await portfolioLinks(id))) return res.status(403).json({ error: 'permission_denied' });
+  // Removes only the combined login; the companies and their own logins stay untouched.
+  await db.run(`DELETE FROM users WHERE id=$1 AND role='portfolio'`, [id]);
+  await audit(req, 'portfolio_deleted', 'portfolio', id, {});
+  res.json({ ok: true });
 });
 
 /* ------------------------------ messages inbox ------------------------------ */

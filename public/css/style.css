@@ -425,3 +425,95 @@ html.is-scrolling ::-webkit-scrollbar-thumb{animation:scrollbar-dance 1.1s ease-
   .msg-back{display:inline-flex}
 }
 [dir=rtl] .msg-back{transform:scaleX(-1)}
+
+/* ------------------------- multi-company accounts -------------------------- */
+.segmented{display:inline-flex;gap:4px;padding:4px;background:#fff;border:1px solid var(--line);border-radius:99px;margin-bottom:14px;box-shadow:var(--shadow)}
+.segmented[hidden]{display:none}
+.segmented .seg{border:0;background:none;padding:.45rem 1.05rem;border-radius:99px;font:inherit;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer;transition:color .25s,background-color .35s cubic-bezier(.16,1,.3,1),box-shadow .35s}
+.segmented .seg:hover{color:var(--navy)}
+.segmented .seg.active{background:var(--navy);color:#fff;box-shadow:0 8px 18px -10px rgba(15,33,64,.7)}
+.company-chips{display:flex;flex-wrap:wrap;gap:4px;max-width:440px}
+.pf-groups{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px}
+.pf-list{max-height:260px}
+.pf-list .client-check{transition:background-color .25s}
+.pf-list .client-check.on{background:#F7F1E1}
+
+/* owner's company picker */
+body.pf-open{overflow:hidden}
+.pf-screen{position:fixed;inset:0;z-index:50;overflow:auto;background:radial-gradient(1100px 520px at 50% -12%,rgba(176,138,50,.11),transparent 62%),linear-gradient(180deg,#FCFBF7,var(--paper))}
+.pf-inner{max-width:1080px;margin:0 auto;padding:22px 28px 64px}
+.pf-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.pf-logo{height:46px}
+.pf-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pf-close{font-size:22px}
+.pf-title{text-align:center;margin:58px auto 38px;max-width:640px}
+.pf-eyebrow{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);font-weight:700;margin:0 0 12px}
+.pf-title h1{font-family:var(--font-heading);font-size:clamp(30px,4.2vw,46px);color:var(--navy-ink);margin:0;line-height:1.15}
+.pf-rule{display:block;width:88px;height:1px;margin:20px auto 16px;background:linear-gradient(90deg,transparent,var(--gold),transparent);transform-origin:center}
+.pf-search{max-width:380px;margin:0 auto 22px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+.pf-card{--mx:50%;--my:50%;position:relative;display:flex;align-items:center;gap:16px;text-align:start;padding:20px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);cursor:pointer;font:inherit;color:var(--ink);overflow:hidden;transition:transform .5s cubic-bezier(.16,1,.3,1),box-shadow .5s cubic-bezier(.16,1,.3,1),border-color .35s}
+.pf-card[hidden]{display:none}
+.pf-card::before{content:"";position:absolute;inset:0;background:radial-gradient(280px circle at var(--mx) var(--my),rgba(176,138,50,.10),transparent 62%);opacity:0;transition:opacity .4s;pointer-events:none}
+.pf-card::after{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);transform:scaleX(0);transition:transform .7s cubic-bezier(.16,1,.3,1)}
+.pf-card:hover,.pf-card:focus-visible{transform:translateY(-3px);border-color:var(--gold-line);box-shadow:0 2px 4px rgba(10,24,48,.04),0 32px 60px -30px rgba(10,24,48,.4);outline:none}
+.pf-card:hover::before,.pf-card:focus-visible::before{opacity:1}
+.pf-card:hover::after,.pf-card:focus-visible::after,.pf-card.current::after,.pf-card.chosen::after{transform:scaleX(1)}
+.pf-card.current,.pf-card.chosen{border-color:var(--gold-line)}
+.pf-mono{flex:none;width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-family:var(--font-heading);font-size:19px;font-weight:700;color:var(--gold-soft);background:linear-gradient(160deg,var(--navy-line),var(--navy-ink));box-shadow:inset 0 0 0 1px rgba(222,199,122,.35)}
+.pf-card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.pf-name{font-weight:700;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-meta{font-size:12.5px;color:var(--muted)}
+.pf-arrow{color:var(--gold);font-size:18px;transition:transform .5s cubic-bezier(.16,1,.3,1)}
+.pf-card:hover .pf-arrow{transform:translateX(4px)}
+[dir=rtl] .pf-arrow{transform:scaleX(-1)}
+[dir=rtl] .pf-card:hover .pf-arrow{transform:scaleX(-1) translateX(4px)}
+.pf-current{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-line);border-radius:99px;padding:.15rem .6rem;white-space:nowrap}
+.pf-veil{position:fixed;inset:0;z-index:300;background:var(--paper)}
+
+/* switcher in the client top bar */
+.company-switch{display:inline-flex;align-items:center;gap:10px;padding:5px 12px 5px 6px;border-radius:12px;border:1px solid var(--gold-line);background:linear-gradient(180deg,#fff,#FBF8EF);cursor:pointer;font:inherit;color:var(--ink);transition:box-shadow .4s,transform .4s cubic-bezier(.16,1,.3,1)}
+.company-switch[hidden]{display:none}
+.company-switch:hover{box-shadow:0 12px 26px -16px rgba(176,138,50,.7);transform:translateY(-1px)}
+.cs-mono{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-family:var(--font-heading);font-size:12.5px;font-weight:700;color:var(--gold-soft);background:linear-gradient(160deg,var(--navy-line),var(--navy-ink))}
+.cs-text{display:flex;flex-direction:column;line-height:1.15;text-align:start}
+.cs-text small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.cs-text b{font-size:13.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-viewing{font-size:12.5px;margin:2px 0 4px;color:var(--gold)}
+[dir=rtl] .pf-eyebrow,[dir=rtl] .cs-text small,[dir=rtl] .pf-current{letter-spacing:0}
+@media (max-width:640px){
+  .pf-inner{padding:16px}
+  .pf-title{margin:34px auto 26px}
+  .company-switch{order:-1;width:100%}
+  .cs-text b{max-width:none}
+}
+@media (prefers-reduced-motion:reduce){.pf-card,.pf-card::after,.pf-arrow,.company-switch,.segmented .seg{transition:none}}
+
+/* ------------------------------ refined motion ------------------------------ */
+.modal-wrap{backdrop-filter:blur(6px) saturate(115%);-webkit-backdrop-filter:blur(6px) saturate(115%)}
+.stats-row .stat{position:relative;overflow:hidden;transition:transform .5s cubic-bezier(.16,1,.3,1),box-shadow .5s cubic-bezier(.16,1,.3,1),border-color .35s}
+.stats-row .stat::after{content:"";position:absolute;inset:auto 18px 0 18px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);transform:scaleX(0);transition:transform .7s cubic-bezier(.16,1,.3,1)}
+.stats-row .stat:hover{transform:translateY(-3px);border-color:var(--gold-line);box-shadow:0 2px 4px rgba(10,24,48,.04),0 26px 50px -28px rgba(10,24,48,.38)}
+.stats-row .stat:hover::after{transform:scaleX(1)}
+.cli-hero{position:relative;overflow:hidden}
+.cli-hero::before{content:"";position:absolute;inset:auto 0 0 0;height:1px;background:linear-gradient(90deg,transparent,rgba(222,199,122,.7),transparent)}
+.cli-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.09) 50%,transparent 62%);transform:translateX(-100%);pointer-events:none}
+.cli-hero.sheen::after{animation:heroSheen 2.4s cubic-bezier(.4,0,.2,1) both}
+@keyframes heroSheen{to{transform:translateX(100%)}}
+[dir=rtl] .cli-hero::after{transform:translateX(100%)}
+[dir=rtl] .cli-hero.sheen::after{animation-name:heroSheenRtl}
+@keyframes heroSheenRtl{to{transform:translateX(-100%)}}
+.cli-hero .pf-viewing{color:var(--gold-soft)}
+.cli-main .card.sec{transition:box-shadow .5s cubic-bezier(.16,1,.3,1)}
+.cli-main .card.sec:hover{box-shadow:0 2px 4px rgba(10,24,48,.04),0 28px 56px -32px rgba(10,24,48,.34)}
+.msg-ti{transition:background-color .3s cubic-bezier(.16,1,.3,1)}
+.tbl tbody tr{transition:background-color .3s ease,box-shadow .3s ease}
+@media (max-width:640px){
+  .has-company-switch .cli-top{flex-wrap:wrap;row-gap:10px}
+  .has-company-switch .cli-actions{width:100%;justify-content:flex-start}
+  .has-company-switch .cli-actions .company-switch{width:100%;order:-1;justify-content:flex-start}
+  .has-company-switch .company-switch svg{margin-inline-start:auto}
+  .pf-head{flex-wrap:wrap;row-gap:10px}
+  .pf-head-actions{width:100%;justify-content:flex-start}
+  .pf-head-actions .pf-close{margin-inline-start:auto}
+}
